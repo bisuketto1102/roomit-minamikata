@@ -1,9 +1,11 @@
 /*************************************************
  * アパホテル〈新大阪 南方駅前〉
- * 2枚読み取り版
+ * 3枚読み取り版（3枚は同時に読む）
  *
- *  1枚目 ルームインジケーター … 部屋番号・状態コード（印刷）
- *  2枚目 清掃指示書           … フル清掃・ノーメイク・アーリーIN など（印刷）
+ *  1枚目 ルームインジケーター … 部屋番号・状態コード（印刷）。12F〜02F・列1〜17、上に集計ボックス
+ *         PDF なら管理画面で表を高解像度の画像2枚（12F〜07F／06F〜02F）に切り出して読む
+ *  2枚目 清掃指示書           … フル清掃・ノーメイク・アーリーIN・レイトアウト・延泊 など（1枚）
+ *  3枚目 ダブルメイク指示書   … 色マス（常設・継続・新規・解除・増設予定）、欄外にコネクト・ツイン
  *
  * インジケーターの手書きは、清掃指示書の内容を現場で転記したもの。
  * 手書きは読まず、活字の清掃指示書から取る。精度が段違いに高い。
@@ -55,6 +57,33 @@ const SKIP_BOX = ['block'];
 /** アーリーチェックインは「30分前には仕上げる」 */
 const EARLY_MARGIN_MIN = 30;
 
+/**
+ * 全客室（179室）。インジケーターの列番号＝部屋番号の下2桁。
+ *   12F … 01〜17 のうち 10・12 が無い
+ *   11F〜04F … 01〜17
+ *   03F … 01〜16（17 が無い）
+ *   02F … 01〜17 のうち 05・06・13・14・17 が無い
+ * 部屋が増減したらここと Code.gs の SPECIAL_TOTAL を直す。
+ */
+const NO_ROOM = ['1210', '1212', '317', '205', '206', '213', '214', '217'];
+function roomList_() {
+  const list = [];
+  for (let f = 12; f >= 2; f--) {
+    for (let n = 1; n <= 17; n++) {
+      const no = String(f * 100 + n);
+      if (NO_ROOM.indexOf(no) < 0) list.push(no);
+    }
+  }
+  return list;
+}
+const ROOMS = roomList_();
+const ROOM_SET = {};
+ROOMS.forEach(r => { ROOM_SET[r] = 1; });
+
+/** インジケーターの切り出し。上の画像に 12F〜07F、下の画像に 06F〜02F */
+const IND_TOP = ['12F', '11F', '10F', '09F', '08F', '07F'];
+const IND_BOTTOM = ['06F', '05F', '04F', '03F', '02F'];
+
 
 /*************************************************
  * 1枚目 ルームインジケーター
@@ -71,9 +100,130 @@ const EARLY_MARGIN_MIN = 30;
  */
 function readIndicator(base64, mimeType) {
   const key = apiKey_();
-  const a = callGemini_(key, base64, mimeType, indicatorPrompt_('color'), indicatorSchema_());
-  const b = callGemini_(key, base64, mimeType, indicatorPrompt_('text'),  indicatorSchema_());
-  return crossCheck_(a, b);
+  // 2通りの読みは関係がないので同時に投げる（待ち時間は遅いほう1回ぶん）
+  const out = callGeminiMany_(key, [
+    { base64: base64, mimeType: mimeType, prompt: indicatorPrompt_('color'), schema: indicatorSchema_() },
+    { base64: base64, mimeType: mimeType, prompt: indicatorPrompt_('text'),  schema: indicatorSchema_() }
+  ]);
+  return Object.assign(crossCheck_(out[0], out[1]), { usage: USAGE_ });
+}
+
+
+/*************************************************
+ * インジケーター（PDF）を画像で読む ― 速くて正確な方法
+ *
+ * PDF をそのまま Gemini に渡すと、ページ全体が小さく縮められてから読まれ、
+ * 「SD」と「D」の小さい文字がつぶれやすい（御堂筋で確認）。
+ * そこで管理画面（ブラウザ）で PDF を高解像度の画像にし、表の部分だけを
+ * 上（集計ボックス＋12F〜07F）と下（06F〜02F）の2枚に切り出して送る。
+ *
+ * 書き出しも短くする。階ごとに「1201 SD, 1202 D, 1203 *D」の1行だけ書かせる。
+ * 読み方は2通り（上の行から／下の行から）。外す場所がずれるので、食い違いだけ人が見ればよい。
+ * PDF は印刷の画面で手書きが無いので、考える量は最小・解像度は高にする。
+ *************************************************/
+function readIndicatorCrops(top, bottom) {
+  const key = apiKey_();
+  const job = (img, part, order) => ({ base64: img, mimeType: 'image/jpeg', hi: true, think: 'minimal',
+    prompt: indicatorCropPrompt_(part, order), schema: indicatorRowSchema_() });
+  const out = callGeminiMany_(key, [
+    job(top, 'top', 'down'), job(bottom, 'bottom', 'down'),
+    job(top, 'top', 'up'),   job(bottom, 'bottom', 'up')
+  ]);
+  const join = (x, y) => ({
+    rooms: rowsToRooms_(x, IND_TOP).concat(rowsToRooms_(y, IND_BOTTOM)),
+    counts: (x && x.counts) || {}
+  });
+  const res = crossCheck_(join(out[0], out[1]), join(out[2], out[3]));
+
+  // 無いはずの番号は落とし、2回とも出てこなかった部屋は空欄で足して人に埋めてもらう
+  const notExist = res.rooms.filter(r => !ROOM_SET[r.room]).map(r => r.room);
+  res.rooms = res.rooms.filter(r => ROOM_SET[r.room]);
+  const have = {};
+  res.rooms.forEach(r => { have[r.room] = 1; });
+  const missing = ROOMS.filter(no => !have[no]);
+  missing.forEach(no => {
+    const r = normRoom_({ room: no, code: '' });
+    r.uncertain.push('room');
+    res.rooms.push(r);
+  });
+  res.rooms.sort((x, y) => cmpRoomNo_(x.room, y.room));
+  res.cross.missing = missing;
+  res.cross.notExist = notExist;
+  return Object.assign(res, { usage: USAGE_, crops: true });
+}
+
+function indicatorCropPrompt_(part, order) {
+  const floors = part === 'top' ? IND_TOP : IND_BOTTOM;
+  const rows = order === 'up' ? floors.slice().reverse() : floors;
+  const want = ROOMS.filter(no => floors.indexOf(('0' + parseInt(floorOf_(no), 10)).slice(-2) + 'F') >= 0);
+  return [
+    'これはアパホテル〈新大阪 南方駅前〉の PMS 画面「ルームインジケーター」をスキャンした画像の一部です（表の'
+      + (part === 'top' ? '上側。上に集計ボックスがある' : '下側') + '）。',
+    '',
+    '■ 読むのは ' + floors[0] + '〜' + floors[floors.length - 1] + ' の行だけ（' + floors.length + '階ぶん）。',
+    part === 'top'
+      ? '画像の一番下に 06F の行が切れて写っていることがある。06F は出力しない。07F は必ず出力する。'
+      : '画像の一番上に 07F の行が切れて写っていることがある。07F は出力しない。06F は必ず出力する（上から2行目のことがある）。',
+    '行を ' + rows.join(' → ') + ' の順に、左から右へ読む。',
+    '- 列の見出しは 1〜17。1つのマスは2段で、上段が部屋番号（例 1201）、下段が状態コード。',
+    '- 部屋が無い位置（空白のマス）は飛ばす。12F は 1209 の次が 1211（1210・1212 は無い）。',
+    '',
+    '■ 状態コードは印刷された文字を一字ずつ読む ※最重要',
+    '- V / SD / S / D / O / I / C / P / X / A のどれか。',
+    '- 「SD」は2文字。「D」1文字と取り違えないこと。迷ったら文字の幅を見る（SD は横に長い）。',
+    '- 「D」（出発予定）と「O」（出済）を取り違えないこと。D は右側が丸く閉じた形、O は左右対称の輪。',
+    '- 参考：背景色は SD＝薄い黄色、D＝薄いピンク、O＝濃い赤・オレンジ、V＝緑、X＝赤。文字と色が食い違うときは文字を優先。',
+    '- 頭に「*」が付いていたら残す（例 *D）。',
+    '- どうしても読めないマスは「1203 ?」と書く。推測しない。',
+    '',
+    '■ 出力の形',
+    'rows に1階1つ。cells は「部屋番号 コード」をカンマで並べた1行の文字。',
+    '例　{"floor":"12F","cells":"1201 SD, 1202 D, 1203 *D, 1204 O"}',
+    '対象の部屋は次の ' + want.length + ' 室。これ以外の番号は出力しない。',
+    want.join(', '),
+    '',
+    part === 'top'
+      ? '■ counts：表の上の集計ボックスの印刷の数字をそのまま入れる。vacant←空室(V)　stay←滞在(S)　checkin←仮チェックイン(I)　depart←出発予定(D)　departed←出済(O)　cleaning←清掃(C)　inspect←点検(P)　broken←故障(X)　block←アサインブロック(A)。'
+      : 'counts は空にする。'
+  ].join('\n');
+}
+
+function indicatorRowSchema_() {
+  const n = { type: 'INTEGER' };
+  return {
+    type: 'OBJECT',
+    properties: {
+      rows: { type: 'ARRAY', items: {
+        type: 'OBJECT',
+        properties: { floor: { type: 'STRING' }, cells: { type: 'STRING' } },
+        required: ['floor', 'cells']
+      }},
+      counts: { type: 'OBJECT', properties: {
+        vacant: n, stay: n, checkin: n, depart: n, departed: n,
+        cleaning: n, inspect: n, broken: n, block: n } }
+    },
+    required: ['rows']
+  };
+}
+
+/**
+ * 「1201 *D, 1202 SD, 1203 ?」→ 部屋の配列。カンマが抜けていても読める。
+ * その画像で読むはずの階（floors）以外の行は捨てる（切れて写った隣の階を拾わないため）。
+ */
+function rowsToRooms_(x, floors) {
+  const out = [];
+  ((x && x.rows) || []).forEach(row => {
+    const re = /(\d{3,4})\s*[:=：]?\s*(\*?\s*[A-Za-z]{1,2}|\?)?/g;
+    let m;
+    while ((m = re.exec(String(row.cells || '')))) {
+      const f = ('0' + parseInt(floorOf_(m[1]), 10)).slice(-2) + 'F';
+      if (floors && floors.indexOf(f) < 0) continue;
+      const raw = String(m[2] || '').replace(/\s/g, '').toUpperCase();
+      const code = raw === '?' ? '' : raw;
+      out.push({ room: m[1], code: code, hand: false, uncertain: code ? [] : ['code'] });
+    }
+  });
+  return out;
 }
 
 /** S と SD は同じ「滞在」。比較するときはそろえる */
@@ -248,7 +398,7 @@ function indicatorSchema_() {
  *************************************************/
 function readOrder(base64, mimeType) {
   const parsed = callGemini_(apiKey_(), base64, mimeType, orderPrompt_(), orderSchema_());
-  return normOrder_(parsed);
+  return Object.assign(normOrder_(parsed), { usage: USAGE_ });
 }
 
 function orderPrompt_() {
@@ -394,7 +544,7 @@ const ROYAL_KINDS = ['新規', '継続', '常設'];
 
 function readDouble(base64, mimeType) {
   const parsed = callGemini_(apiKey_(), base64, mimeType, doublePrompt_(), doubleSchema_());
-  return normDouble_(parsed);
+  return Object.assign(normDouble_(parsed), { usage: USAGE_ });
 }
 
 function doublePrompt_() {
@@ -704,6 +854,9 @@ function verify_(rooms, order, orphan, ruled) {
     warn.push('2回の読み取りで食い違った部屋（要確認）：'
       + cr.diff.map(d => d.room + '（' + (d.a || '空') + ' か ' + (d.b || '空') + '）').join('、'));
   }
+  if (cr.missing && cr.missing.length)
+    warn.push('2回とも読めなかった部屋（空欄にしています。写真を見て埋めてください）：' + cr.missing.join('、'));
+  if (cr.notExist && cr.notExist.length) warn.push('無いはずの部屋番号を読んだので外しました：' + cr.notExist.join('、'));
   if (cr.onlyA && cr.onlyA.length) warn.push('1回目だけに出た部屋：' + cr.onlyA.join('、'));
   if (cr.onlyB && cr.onlyB.length) warn.push('2回目だけに出た部屋：' + cr.onlyB.join('、'));
 
@@ -817,42 +970,88 @@ function apiKey_() {
   return k;
 }
 
-function callGemini_(key, base64, mimeType, prompt, schema) {
-  const payload = {
-    contents: [{ parts: [
-      { text: prompt },
-      { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } }
-    ]}],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-      responseSchema: schema
-    }
+/**
+ * Gemini への1回ぶんのリクエストを作る。
+ *  think … 考える量（'minimal' など）。渡さなければモデルの標準のまま（清掃指示書・ダブルメイクは標準）
+ *  hi    … 画像を高解像度で読ませる（インジケーターの切り出し画像）
+ */
+function geminiReq_(key, base64, mimeType, prompt, schema, think, hi) {
+  const cfg = {
+    temperature: 0,
+    maxOutputTokens: 65536,
+    responseMimeType: 'application/json',
+    responseSchema: schema
   };
+  if (think) cfg.thinkingConfig = { thinkingLevel: think };
+  if (hi) cfg.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
+  return {
+    url: 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL
+       + ':generateContent?key=' + encodeURIComponent(key),
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({
+      contents: [{ parts: [
+        { text: prompt },
+        { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } }
+      ]}],
+      generationConfig: cfg
+    })
+  };
+}
 
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL
-            + ':generateContent?key=' + encodeURIComponent(key);
-  const send = () => UrlFetchApp.fetch(url, {
-    method: 'post', contentType: 'application/json',
-    payload: JSON.stringify(payload), muteHttpExceptions: true
-  });
+/** この実行で使ったトークン数（読み取りのたびに画面に出す。やり直したぶんも入る） */
+const USAGE_ = { input: 0, output: 0 };
 
-  let res, code = 0;
-  for (let i = 0; i < 4; i++) {
-    if (i > 0) Utilities.sleep(3000 * i);
-    res = send();
-    code = res.getResponseCode();
-    if (code === 200) break;
-    if ([429, 500, 502, 503].indexOf(code) < 0) break;
+/** 返事を読む。だめなら理由を文字で返す */
+function geminiParse_(res) {
+  const code = res.getResponseCode();
+  if (code === 400 && /thinking|media_?resolution/i.test(res.getContentText())) {
+    return { err: '考える量・解像度の指定が使えない', retry: true, plain: true };
   }
   if (code !== 200) {
-    const hint = (code === 503 || code === 429)
+    return { err: (code === 503 || code === 429)
       ? 'Gemini側が混み合っています。少し待ってもう一度お試しください。'
-      : res.getContentText().slice(0, 300);
-    throw new Error('読み取り失敗 (' + code + '): ' + hint);
+      : '(' + code + ') ' + res.getContentText().slice(0, 300), retry: [429, 500, 502, 503].indexOf(code) >= 0 };
   }
+  let body;
+  try { body = JSON.parse(res.getContentText()); } catch (e) { return { err: '返事が読めません', retry: true }; }
+  const cand = (body.candidates || [])[0] || {};
+  const parts = ((cand.content || {}).parts || []).filter(p => p.text && !p.thought);
+  const text = parts.map(p => p.text).join('').replace(/```json|```/g, '').trim();
+  if (!text) {
+    const why = cand.finishReason || (body.promptFeedback && body.promptFeedback.blockReason) || '空の返事';
+    return { err: 'Gemini が何も返しませんでした（' + why + '）', retry: true };
+  }
+  const u = body.usageMetadata || {};
+  USAGE_.input  += u.promptTokenCount || 0;
+  USAGE_.output += (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0);
+  try { return { data: JSON.parse(text) }; }
+  catch (e) {
+    return { err: cand.finishReason === 'MAX_TOKENS'
+      ? '返事が途中で切れました（出力が長すぎる）' : '返事の形がおかしい（' + (cand.finishReason || '') + '）', retry: true };
+  }
+}
 
-  const body  = JSON.parse(res.getContentText());
-  const parts = (((body.candidates || [])[0] || {}).content || {}).parts || [];
-  return JSON.parse(parts.map(p => p.text || '').join('').replace(/```json|```/g, '').trim());
+/**
+ * 複数のリクエストを同時に投げる。失敗したものだけ3回までやり直す。
+ * 考える量・解像度の指定が使えないモデルだったら、指定を外して投げ直す。
+ */
+function callGeminiMany_(key, jobs) {
+  const reqs = jobs.map(j => geminiReq_(key, j.base64, j.mimeType, j.prompt, j.schema, j.think, j.hi));
+  let res = UrlFetchApp.fetchAll(reqs).map(geminiParse_);
+  for (let t = 1; t <= 3; t++) {
+    const again = res.map((r, i) => (r.err && r.retry) ? i : -1).filter(i => i >= 0);
+    if (!again.length) break;
+    again.forEach(i => { if (res[i].plain) { const j = jobs[i];
+      reqs[i] = geminiReq_(key, j.base64, j.mimeType, j.prompt, j.schema, null, false); } });
+    if (!again.every(i => res[i].plain)) Utilities.sleep(3000 * t);
+    const re = UrlFetchApp.fetchAll(again.map(i => reqs[i])).map(geminiParse_);
+    again.forEach((i, k) => { res[i] = re[k]; });
+  }
+  const bad = res.map((r, i) => r.err ? (jobs.length > 1 ? (i + 1) + '本目：' : '') + r.err : '').filter(Boolean);
+  if (bad.length) throw new Error('読み取り失敗　' + bad.join(' ／ '));
+  return res.map(r => r.data);
+}
+
+function callGemini_(key, base64, mimeType, prompt, schema) {
+  return callGeminiMany_(key, [{ base64: base64, mimeType: mimeType, prompt: prompt, schema: schema }])[0];
 }

@@ -81,6 +81,18 @@
   .ord{font-size:13.5px}
   .ord div{padding:5px 0;border-bottom:1px solid var(--line)}
   .ord b{color:var(--muted);font-size:11.5px;display:inline-block;min-width:112px}
+  .slot img.big{max-height:none;object-fit:contain}
+  .slot .fn{font-size:11.5px;color:var(--muted);margin-top:6px;word-break:break-all}
+  /* 部屋を直す */
+  .edf{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+  .edf .er{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;
+           border-bottom:1px solid var(--line);font-size:14px}
+  .edf .er.col{flex-direction:column;align-items:stretch}
+  .edf .er select,.edf .er input[type=time],.edf .er input[type=text]{border:1px solid var(--line);border-radius:6px;
+           padding:8px;background:var(--bg);font-size:15px}
+  .edf .er input[type=checkbox]{width:22px;height:22px}
+  .edf .btn{margin-top:12px}
+  .rvbtn{border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12.5px;background:var(--surface)}
 </style>
 </head>
 <body>
@@ -102,8 +114,9 @@
 <div class="wrap">
 
   <div class="card">
-    <h2>2枚の紙を取り込む</h2>
-    <p class="hint">3枚とも選んでから「読み取る」。写真でもPDFでも読めます。1分半ほどかかります。
+    <h2>3枚の紙を取り込む</h2>
+    <p class="hint">3枚とも選んでから「読み取る」。写真でもPDFでも読めます。3枚は同時に読むので1分ほどです。
+      インジケーターがPDFなら、表の部分を高解像度の画像2枚（12F〜07F／06F〜02F）に切り出して読みます。
       ダブルメイク指示書は無くても進められます。</p>
     <input type="date" id="date">
     <div class="slots">
@@ -150,15 +163,62 @@
   </div>
 
   <div class="card">
+    <h2>業務中の追加指示</h2>
+    <p class="hint">フロントなどから来た指示を部屋に入れます（上の日付の部屋）。清掃員画面で部屋を押すと、
+      詳細の一番上に赤い枠で出ます。「指示」ボタンの一覧とフロアレポートの備考にも載ります。
+      部屋番号はスペースか「、」で区切れば何部屋でも入れられます。</p>
+    <input type="text" id="odRooms" inputmode="numeric" placeholder="部屋番号（例：305 306）"
+           style="width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:16px">
+    <input type="text" id="odText" placeholder="指示（例：タオル2枚追加、14時イン）"
+           style="width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:16px;margin-top:8px">
+    <button class="btn" style="margin-top:10px" onclick="addOd()">指示を入れる</button>
+    <div class="msg" id="odMsg"></div>
+    <div id="odList" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>部屋を直す</h2>
+    <p class="hint">上の日付の部屋を1室ずつ直せます。部屋番号を入れて「呼び出す」→ 直して「この部屋を保存」。
+      入室・退出と回収の記録には触りません。コード・フル清掃・ノーメイク・延泊・Wメイク・ツイン・アパエコ・時刻・特記は、
+      朝の紙を取り込み直して保存すると読み取りの値に戻ります。レイトアウトを19時以降にすると翌日回し（対象外）になります。</p>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="edRoom" inputmode="numeric" placeholder="部屋番号"
+             style="flex:1;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:16px">
+      <button class="btn" style="width:auto;margin:0;padding:0 18px" onclick="loadRoom()">呼び出す</button>
+    </div>
+    <div class="msg" id="edMsg"></div>
+    <div id="edForm" hidden class="edf">
+      <div class="er"><label>コード</label><select id="edCode"></select></div>
+      <div class="er"><label>フル清掃（リネン強制交換）</label><input type="checkbox" id="edFull"></div>
+      <div class="er"><label>ノーメイク</label><input type="checkbox" id="edNm"></div>
+      <div class="er"><label>延泊</label><input type="checkbox" id="edExt"></div>
+      <div class="er"><label>DD</label><input type="checkbox" id="edDd"></div>
+      <div class="er"><label>DDの備品</label>
+        <select id="edSupply"><option value="">—</option><option>要</option><option>不要</option></select></div>
+      <div class="er"><label>清掃不要（DDも立ちます）</label><input type="checkbox" id="edSkip"></div>
+      <div class="er"><label>アパエコ</label><input type="checkbox" id="edEco"></div>
+      <div class="er"><label>Wメイク</label><select id="edW"></select></div>
+      <div class="er"><label>ツイン</label><input type="checkbox" id="edTw"></div>
+      <div class="er"><label>締切（仕上げ）</label><input type="time" id="edDue"></div>
+      <div class="er"><label>IN時刻</label><input type="time" id="edIn"></div>
+      <div class="er"><label>レイトアウト</label><input type="time" id="edLate"></div>
+      <div class="er col"><label>指示書の特記</label><input type="text" id="edNote"></div>
+      <div class="er col"><label>現場メモ</label><input type="text" id="edMemo"></div>
+      <div class="er col"><label>追加指示</label><input type="text" id="edOrder" placeholder="複数あるときは「 / 」で区切る"></div>
+      <button class="btn save" onclick="saveRoom()">この部屋を保存</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>ホテルへの報告</h2>
     <p class="hint">上の日付の実績から作ります。コピーしてそのまま貼れます。</p>
     <button class="btn" onclick="makeDecl()">報告文を作る</button>
     <textarea id="decl" style="margin-top:11px;display:none" readonly></textarea>
     <button class="btn ghost" id="copyBtn" style="display:none" onclick="copyDecl()">コピーする</button>
-    <button class="btn ghost" onclick="makeDaily()">日報シートを作る（客室清掃日報＋責任者業務日報）</button>
+    <button class="btn ghost" onclick="makeDaily(this)">日報シートを作る（客室清掃日報＋責任者業務日報）</button>
     <div class="msg" id="dailyMsg"></div>
 
-    <button class="btn ghost" onclick="makeFloor()">フロアレポートを作る</button>
+    <button class="btn ghost" onclick="makeFloor(this)">フロアレポートを作る</button>
     <div class="msg" id="frMsg"></div>
   </div>
 
@@ -187,9 +247,18 @@
 
   <div class="card">
     <h2>清掃員別</h2>
-    <p class="hint">清掃とチェックを分けて集計しています。</p>
-    <table><thead><tr><th>清掃員 / 作業</th><th class="n">室数</th><th class="n">合計</th>
-      <th class="n">平均</th></tr></thead><tbody id="sumStaff"></tbody></table>
+    <p class="hint">退出まで押した部屋を数えています。TW＝ツインの部屋（清掃の内数）。DD＝DDセット。平均は清掃の部屋だけ。</p>
+    <table><thead><tr><th>清掃員</th><th class="n">清掃</th><th class="n">TW</th>
+      <th class="n">DD</th><th class="n">平均</th></tr></thead>
+      <tbody id="sumStaff"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>チェッカー別</h2>
+    <p class="hint">チェックの退出まで押した部屋を数えています。DD＝DDチェック。</p>
+    <table><thead><tr><th>チェッカー</th><th class="n">チェック</th>
+      <th class="n">DD</th><th class="n">平均</th></tr></thead>
+      <tbody id="sumCheck"></tbody></table>
   </div>
 
   <div class="card">
@@ -210,7 +279,7 @@ const CODENAME = {'':'（未設定）',V:'V 空室',SD:'SD 滞在',D:'D 出発�
 const EXTRA = [['fullClean','フル清掃'],['eco','エコ清掃'],['noMake','ノーメイク'],
                ['linen','リネン交換'],['extend','延泊'],['pop','POP回収']];
 const KBNNAME = {OUT:'アウト',STAY:'ステイ',FULL:'フルメイク',V:'空室',NONE:'対象外'};
-let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '';
+let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '', FINISH_NOTE = '';
 
 /** 「2026/9/29」「2026-09-29」などを yyyy-MM-dd にそろえる */
 function normYmd(v){
@@ -243,12 +312,28 @@ function unlock(){
         if (file.size > 15 * 1024 * 1024) { alert('PDFが大きすぎます（15MBまで）'); return; }
         IMG[f] = await readB64(file);
         MIME[f] = 'application/pdf';
+        if (f === 'f1') CROPS = null;
         $(p).innerHTML = '<div style="margin-top:8px;padding:14px 6px;border-radius:5px;'
           + 'background:#FDE7EA;color:#8A2B1C;font-weight:700;font-size:13px">PDF<br>'
           + '<span style="font-weight:400;font-size:11px">'+esc(file.name)+'</span></div>';
+        // インジケーターは表の部分を高解像度の画像に切り出して送る（速くて正確）。失敗したら PDF のまま送る
+        if (f === 'f1') {
+          $(p).innerHTML += '<div class="fn" id="cropMsg">表を切り出し中…</div>';
+          $('go').disabled = true;
+          try {
+            CROPS = await cropIndicator(file);
+            // 切り出した2枚を出す。押すと大きくなる（もう一度押すと戻る）
+            $('cropMsg').outerHTML = CROPS.map(c=>'<img src="data:image/jpeg;base64,'+c+'" '
+              + 'onclick="event.preventDefault();this.classList.toggle(\'big\')">').join('');
+          } catch(err){
+            CROPS = null;
+            $('cropMsg').textContent = '切り出しできなかったので PDF のまま読みます';
+          }
+        }
       } else {
         IMG[f] = await shrink(file, 2600);
         MIME[f] = 'image/jpeg';
+        if (f === 'f1') CROPS = null;
         $(p).innerHTML = '<img src="data:image/jpeg;base64,'+IMG[f]+'">';
       }
       $(s).classList.add('on');
@@ -258,6 +343,74 @@ function unlock(){
 });
 
 const MIME = {};
+let CROPS = null;
+
+/* ---------- インジケーター PDF → 表だけの画像2枚 ----------
+ * PDF のまま送ると Gemini がページ全体を小さく縮めて読むので、SD と D の文字がつぶれやすい。
+ * ブラウザで 300dpi 相当の画像にし、色の付いたマス（集計ボックス〜表の下端）の範囲を自動で探して、
+ * 上（集計ボックス＋12F〜07F）と下（06F〜02F）に分けて切り出す（境目は少し重ねる）。
+ * pdf.js は使うときだけ読み込む。読み込めない・表が見つからないときは PDF のまま読む。 */
+let PDFJS = null;
+function loadPdfJs(){
+  if (PDFJS) return PDFJS;
+  PDFJS = new Promise((res, rej)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    sc.onload = ()=>{
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      res(pdfjsLib);
+    };
+    sc.onerror = ()=>{ PDFJS = null; rej(new Error('pdf.js')); };
+    document.head.appendChild(sc);
+  });
+  return PDFJS;
+}
+async function cropIndicator(file){
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const page = await pdf.getPage(1);
+  const v1 = page.getViewport({ scale: 1 });
+  const scale = 3508 / Math.max(v1.width, v1.height);         // 長い辺を約3500px（A4で300dpi）
+  const vp = page.getViewport({ scale });
+  const big = document.createElement('canvas');
+  big.width = Math.round(vp.width); big.height = Math.round(vp.height);
+  await page.render({ canvasContext: big.getContext('2d'), viewport: vp }).promise;
+
+  // 小さく縮めたコピーで、色の付いた範囲を探す
+  const W = 500, H = Math.round(big.height * W / big.width);
+  const sm = document.createElement('canvas'); sm.width = W; sm.height = H;
+  const sx = sm.getContext('2d'); sx.drawImage(big, 0, 0, W, H);
+  const px = sx.getImageData(0, 0, W, H).data;
+  const colN = new Array(W).fill(0), rowN = new Array(H).fill(0);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, r = px[i], g = px[i+1], b = px[i+2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx - mn > 45 && mx > 120) { colN[x]++; rowN[y]++; }
+  }
+  // 表のマスは色の付いた画素がまとまって並ぶ。表の外の小さな色（手書きの赤ペンなど）に引っぱられないよう、
+  // いちばん色の多い列の2割以上・いちばん色の多い行の1割以上ある列と行だけで範囲を決める
+  const span = (arr, min) => { let a = -1, b = -1; arr.forEach((n, i) => { if (n >= min) { if (a < 0) a = i; b = i; } }); return [a, b]; };
+  const topC = Math.max.apply(null, colN), topR = Math.max.apply(null, rowN);
+  let [x0, x1] = span(colN, Math.max(3, topC * 0.2)), [y0, y1] = span(rowN, Math.max(3, topR * 0.1));
+  if (x0 < 0 || y0 < 0 || (x1 - x0) < W * 0.15 || (y1 - y0) < H * 0.25) throw new Error('表が見つからない');
+  // 集計ボックスの「出済(O)」は表の右端より外に出ているので、右は広めに取る
+  const sw = x1 - x0;
+  x0 = Math.max(0, x0 - sw * 0.06); x1 = Math.min(W, x1 + sw * 0.16);
+  y0 = Math.max(0, y0 - (y1 - y0) * 0.03); y1 = Math.min(H, y1 + (y1 - y0) * 0.03);
+  const k = big.width / W;
+  const cut = (ya, yb) => {
+    const c = document.createElement('canvas');
+    c.width = Math.round((x1 - x0) * k); c.height = Math.round((yb - ya) * k);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(big, x0 * k, ya * k, c.width, c.height, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.9).split(',')[1];
+  };
+  // 上：集計ボックス＋12F〜07F、下：06F〜02F。境目を少し重ねる（9/29 の PDF で確かめた位置）
+  const h = y1 - y0;
+  return [cut(y0, y0 + h * 0.70), cut(y0 + h * 0.60, y1)];
+}
+
 
 /** ファイルをそのまま base64 にする（PDF用） */
 function readB64(file){
@@ -284,42 +437,66 @@ function shrink(file, max){
   });
 }
 
+let USE = null;
 function read(){
   $('go').disabled = true; $('bars').innerHTML='';
-  say('インジケーターを読み取り中…（2通りの方法で読むので1分ほど）');
-  google.script.run.withSuccessHandler(ind=>{
-    say('清掃指示書を読み取り中…');
-    google.script.run.withSuccessHandler(ord=>{
-      if (!IMG.f3){ finish(ind, ord, null); return; }
-      say('ダブルメイク指示書を読み取り中…');
-      google.script.run
-        .withSuccessHandler(d => finish(ind, ord, d))
-        .withFailureHandler(e => {
-          // 3枚目が読めなくても、2枚ぶんで先に進める
-          $('bars').innerHTML = '<div class="bar wa">ダブルメイク指示書は読めませんでした。'
-            + esc(e.message || '') + '</div>';
-          finish(ind, ord, null);
-        })
-        .readDouble(IMG.f3, MIME.f3 || 'image/jpeg');
-    }).withFailureHandler(fail).readOrder(IMG.f2, MIME.f2 || 'image/jpeg');
-  }).withFailureHandler(fail).readIndicator(IMG.f1, MIME.f1 || 'image/jpeg');
+  // 3枚は関係がないので同時に読む（待ち時間 = いちばん遅い1枚ぶん）
+  const t0 = Date.now();
+  const jobs = [
+    CROPS
+      ? { key:'ind', name:'インジケーター（切り出し2枚）', fn:'readIndicatorCrops', args:CROPS, must:true }
+      : { key:'ind', name:'インジケーター', fn:'readIndicator', args:[IMG.f1, MIME.f1 || 'image/jpeg'], must:true },
+    { key:'ord', name:'清掃指示書', fn:'readOrder', args:[IMG.f2, MIME.f2 || 'image/jpeg'], must:true },
+    IMG.f3 ? { key:'dbl', name:'ダブルメイク指示書', fn:'readDouble', args:[IMG.f3, MIME.f3 || 'image/jpeg'], must:false } : null
+  ].filter(Boolean);
+  const got = {}, st = {};
+  const show1 = () => {
+    const sec = Math.round((Date.now()-t0)/1000);
+    $('ocrMsg').innerHTML = '<span class="spin"></span>読み取り中… ' + sec + '秒<br>'
+      + jobs.map(j => esc(j.name) + '：' + (st[j.key] || '読み取り中')).join('<br>');
+  };
+  const tick = setInterval(show1, 1000); show1();
+  let left = jobs.length, dead = false;
+  const done = () => {
+    if (--left > 0 || dead) return;
+    clearInterval(tick);
+    USE = { sec: Math.round((Date.now()-t0)/1000), input: 0, output: 0 };
+    Object.keys(got).forEach(k => { const u = got[k] && got[k].usage;
+      if (u){ USE.input += u.input || 0; USE.output += u.output || 0; } });
+    finish(got.ind, got.ord, got.dbl || null);
+  };
+  jobs.forEach(j => {
+    google.script.run
+      .withSuccessHandler(r => { got[j.key] = r; st[j.key] = '✓ ' + Math.round((Date.now()-t0)/1000) + '秒'; done(); })
+      .withFailureHandler(e => {
+        st[j.key] = '× 読めず';
+        if (j.must) { if (!dead) { dead = true; clearInterval(tick); fail(new Error(j.name + '：' + (e.message||''))); } return; }
+        // 3枚目が読めなくても、2枚ぶんで先に進める
+        $('bars').innerHTML += '<div class="bar wa">ダブルメイク指示書は読めませんでした。' + esc(e.message||'') + '</div>';
+        done();
+      })[j.fn](...j.args);
+  });
 }
 
 function finish(ind, ord, dbl){
   say('突き合わせ中…');
+  const keep = $('bars').innerHTML;   // ダブルメイクが読めなかった知らせは残す
+  FINISH_NOTE = keep;
   google.script.run.withSuccessHandler(show).withFailureHandler(fail)
     .mergeAll(ind, ord, dbl);
 }
 
 function say(t){ $('ocrMsg').innerHTML = '<span class="spin"></span>'+esc(t); }
-function fail(e){ $('go').disabled=false; $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
+function fail(e){ $('go').disabled=!(IMG.f1 && IMG.f2); $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
 
 function show(res){
   $('go').disabled = false;
   ROWS = res.rooms; ORDER = res.order; DBL = res.dbl || null;
   const v = res.verify;
 
-  $('ocrMsg').textContent = ROWS.length+' 室を読み取り（清掃対象 '+v.cleanTarget+' 室）。';
+  $('ocrMsg').textContent = ROWS.length+' 室を読み取り（清掃対象 '+v.cleanTarget+' 室）。'
+    + (USE ? '\n読み取り ' + USE.sec + '秒　使った量 入力' + USE.input.toLocaleString() + '・出力'
+           + USE.output.toLocaleString() + 'トークン' : '');
   let bars = '<div class="bar '+(v.ok?'ok':'ng')+'"><b>'+(v.ok?'検算OK':'検算NG')+'</b>'
            + esc(v.message)+'</div>';
   (v.warn||[]).forEach(w=>{ bars += '<div class="bar wa">'+esc(w)+'</div>'; });
@@ -332,7 +509,8 @@ function show(res){
          + ' ですが、保存先は ' + esc($('date').value) + ' です。上の日付を直してから保存してください。</div>'
          + bars;
   }
-  $('bars').innerHTML = bars;
+  $('bars').innerHTML = bars + (FINISH_NOTE || '');
+  FINISH_NOTE = '';
 
   const o = ORDER;
   const line = (l, val) => val && val.length
@@ -500,6 +678,87 @@ function save(){
     .saveImport($('date').value, rows);
 }
 
+/* ---------- 業務中の追加指示 ---------- */
+function addOd(){
+  const rooms = $('odRooms').value, text = $('odText').value;
+  if (!rooms.trim() || !text.trim()){ $('odMsg').textContent = '部屋番号と指示を入れてください'; return; }
+  $('odMsg').innerHTML = '<span class="spin"></span>送信中…';
+  google.script.run
+    .withSuccessHandler(r=>{
+      $('odMsg').textContent = (r.added.length ? r.added.join('、') + ' に入れました。' : '')
+        + (r.missing.length ? '　' + r.missing.join('、') + ' はその日の部屋にありません。' : '');
+      if (r.added.length){ $('odRooms').value=''; $('odText').value=''; }
+      drawOd(r.orders);
+    })
+    .withFailureHandler(e=>{ $('odMsg').textContent = e.message || '入れられませんでした'; })
+    .addOrder(rooms, text, $('date').value);
+}
+function drawOd(list){
+  $('odList').innerHTML = (list || []).map(o =>
+    '<div class="stalerow" style="align-items:flex-start;border-color:var(--line);background:var(--surface)"><b>'+esc(o.room)+'</b>'
+    + '<span style="flex:1">'+esc(o.order)+'</span>'
+    + '<span class="mi">'+esc(o.state)+'</span>'
+    + '<button class="rvbtn" onclick="clearOd(\''+esc(o.room)+'\')">消す</button></div>').join('');
+}
+function clearOd(room){
+  if (!confirm(room + ' の指示を消します。')) return;
+  google.script.run.withSuccessHandler(r=>drawOd(r.orders))
+    .withFailureHandler(e=>{ $('odMsg').textContent = e.message || '消せませんでした'; })
+    .setOrder(room, '', $('date').value);
+}
+
+/* ---------- 部屋を直す ---------- */
+let ED = null;
+$('edCode').innerHTML = CODES.filter(Boolean).map(c=>'<option value="'+c+'">'+esc(CODENAME[c]||c)+'</option>').join('');
+function loadRoom(){
+  const no = $('edRoom').value.trim();
+  if (!no){ $('edMsg').textContent = '部屋番号を入れてください'; return; }
+  $('edMsg').innerHTML = '<span class="spin"></span>呼び出し中…';
+  google.script.run
+    .withSuccessHandler(r=>{
+      ED = r;
+      const st = r.check.state === 'done' ? 'チェック済' : r.clean.state === 'done' ? '清掃済'
+               : r.clean.state === 'doing' ? '清掃中（'+r.clean.staff+'）' : '未着手';
+      $('edMsg').textContent = r.room + '　' + (KBNNAME[r.kbn] || r.kbn) + '　' + st
+        + (r.flagNote ? '\n読み取り時のメモ：' + r.flagNote : '');
+      $('edW').innerHTML = ['', ...(r.dmakeKinds || [])].map(k=>'<option value="'+esc(k)+'">'+(k?esc(k):'—')+'</option>').join('');
+      if (r.code && ![...$('edCode').options].some(o=>o.value===r.code))
+        $('edCode').insertAdjacentHTML('beforeend','<option value="'+esc(r.code)+'">'+esc(r.code)+'</option>');
+      $('edCode').value = r.code || 'V';
+      $('edFull').checked = !!r.fullClean; $('edNm').checked = !!r.noMake; $('edExt').checked = !!r.extend;
+      $('edDd').checked = !!r.dd; $('edSupply').value = r.supply || ''; $('edSkip').checked = !!r.skip;
+      $('edEco').checked = !!r.eco; $('edW').value = r.dmake || ''; $('edTw').checked = !!r.twin;
+      $('edDue').value = r.dueIn || ''; $('edIn').value = r.checkIn || '';
+      $('edLate').value = r.lateOut || ''; $('edNote').value = r.note || '';
+      $('edMemo').value = r.memo || ''; $('edOrder').value = r.order || '';
+      $('edForm').hidden = false;
+    })
+    .withFailureHandler(e=>{ $('edForm').hidden = true; $('edMsg').textContent = e.message || '呼び出せませんでした'; })
+    .getRoomAdmin(no, $('date').value);
+}
+// 清掃不要にしたら DD も立てる（清掃員画面と同じ）
+$('edSkip').addEventListener('change', ()=>{ if ($('edSkip').checked) $('edDd').checked = true; });
+function saveRoom(){
+  if (!ED) return;
+  const d = {
+    code: $('edCode').value, fullClean: $('edFull').checked, noMake: $('edNm').checked, extend: $('edExt').checked,
+    dd: $('edDd').checked, supply: $('edSupply').value, skip: $('edSkip').checked, eco: $('edEco').checked,
+    dmake: $('edW').value, twin: $('edTw').checked,
+    dueIn: $('edDue').value, checkIn: $('edIn').value, lateOut: $('edLate').value,
+    note: $('edNote').value, memo: $('edMemo').value, order: $('edOrder').value
+  };
+  $('edMsg').innerHTML = '<span class="spin"></span>保存中…';
+  google.script.run
+    .withSuccessHandler(r=>{
+      ED = r;
+      $('edMsg').textContent = r.room + ' を保存しました（' + (KBNNAME[r.kbn] || r.kbn) + '）。清掃員画面にもすぐ反映されます。';
+      refresh();
+    })
+    .withFailureHandler(e=>{ $('edMsg').textContent = e.message || '保存できませんでした'; })
+    .setRoomAdmin(ED.room, d, $('date').value);
+}
+$('edRoom').addEventListener('keydown', e=>{ if (e.key === 'Enter') loadRoom(); });
+
 /* ---------- 集計 ---------- */
 function refresh(){
   const d = $('date').value;
@@ -516,8 +775,10 @@ function refresh(){
   }).getReport(d);
 
   google.script.run.withSuccessHandler(s=>{
-    fill('sumStaff', s.staff); fill('sumKbn', s.kbn);
+    fillPeople(s.people || []); fill('sumKbn', s.kbn);
   }).getSummary(d);
+
+  google.script.run.withSuccessHandler(r=>drawOd(r.orders)).withFailureHandler(()=>{}).getOrders(d);
 
   google.script.run.withSuccessHandler(sp=>{
     drawSpConf(sp);
@@ -546,6 +807,27 @@ function refresh(){
       +'<span>'+esc(r.staff||'担当者不明')+'</span>'
       +'<span class="mi">'+esc(r.start)+' から '+r.mins+'分</span></div>').join('');
   }).withFailureHandler(()=>{}).getStale(d, 60);
+}
+
+/** 清掃員別（清掃・TW・DDセット・平均）とチェッカー別（チェック・DDチェック・平均） */
+function fillPeople(rows){
+  const avg = (m, n) => n ? Math.round(m / n) + '分' : '';
+  const sum = (a, k) => a.reduce((x, r) => x + r[k], 0);
+  const none = n => '<tr><td colspan="'+n+'" style="color:var(--muted)">完了した部屋はまだありません</td></tr>';
+  const cl = rows.filter(r => r.clean || r.dd);
+  $('sumStaff').innerHTML = cl.length
+    ? cl.map(r => '<tr><td>'+esc(r.name)+'</td><td class="n">'+r.clean+'</td><td class="n">'+r.tw+'</td>'
+        +'<td class="n">'+r.dd+'</td><td class="n">'+avg(r.minutes, r.clean)+'</td></tr>').join('')
+      + '<tr class="total"><td>合計</td><td class="n">'+sum(cl,'clean')+'</td><td class="n">'+sum(cl,'tw')+'</td>'
+      + '<td class="n">'+sum(cl,'dd')+'</td><td class="n">'+avg(sum(cl,'minutes'), sum(cl,'clean'))+'</td></tr>'
+    : none(5);
+  const ck = rows.filter(r => r.check || r.ddCheck);
+  $('sumCheck').innerHTML = ck.length
+    ? ck.map(r => '<tr><td>'+esc(r.name)+'</td><td class="n">'+r.check+'</td><td class="n">'+r.ddCheck+'</td>'
+        +'<td class="n">'+avg(r.checkMin, r.check)+'</td></tr>').join('')
+      + '<tr class="total"><td>合計</td><td class="n">'+sum(ck,'check')+'</td><td class="n">'+sum(ck,'ddCheck')+'</td>'
+      + '<td class="n">'+avg(sum(ck,'checkMin'), sum(ck,'check'))+'</td></tr>'
+    : none(4);
 }
 
 function fill(id, rows){
@@ -612,10 +894,12 @@ function showTodo(k){
   return false;
 }
 
-function makeDaily(){
+function makeDaily(btn){
+  if (btn) btn.disabled = true;
   $('dailyMsg').innerHTML = '<span class="spin"></span>作成中…';
   google.script.run
     .withSuccessHandler(r=>{
+      if (btn) btn.disabled = false;
       const p = r.pending || {};
       const todo = [
         ['チェックが終わっていない部屋', p.noCheck],
@@ -637,14 +921,16 @@ function makeDaily(){
               + '済ませてからもう一度作ってください。</div>'
             : '<div class="bar ok" style="margin-top:8px"><b>やり残しなし</b>全部屋のチェックが終わっています</div>');
     })
-    .withFailureHandler(e=>{ $('dailyMsg').textContent = e.message || '作れませんでした'; })
+    .withFailureHandler(e=>{ if (btn) btn.disabled = false; $('dailyMsg').textContent = e.message || '作れませんでした'; })
     .buildDailyReport($('date').value);
 }
 
-function makeFloor(){
+function makeFloor(btn){
+  if (btn) btn.disabled = true;
   $('frMsg').innerHTML = '<span class="spin"></span>作成中…（1分ほどかかります）';
   google.script.run
     .withSuccessHandler(r=>{
+      if (btn) btn.disabled = false;
       $('frMsg').innerHTML = r.date + ' のフロアレポートを ' + r.floors.length + '階ぶん作りました（'
         + esc(r.floors.join('・')) + '）<br>'
         + '<a href="'+r.url+'" target="_blank" rel="noopener">フロアレポートを開く</a>'
@@ -653,21 +939,8 @@ function makeFloor(){
         + '<br>シート名は「フロアレポート 2F」〜。作り直すと上書きされます。'
         + '印刷は ファイル → 印刷 → 横向き・幅に合わせる。';
     })
-    .withFailureHandler(e=>{ $('frMsg').textContent = e.message || '作れませんでした'; })
+    .withFailureHandler(e=>{ if (btn) btn.disabled = false; $('frMsg').textContent = e.message || '作れませんでした'; })
     .buildFloorReport($('date').value);
-}
-
-function makeManager(){
-  $('mgrMsg').innerHTML = '<span class="spin"></span>作成中…';
-  google.script.run
-    .withSuccessHandler(r=>{
-      $('mgrMsg').innerHTML = r.date + ' の責任者業務日報を作りました（清掃数 ' + r.clean
-        + '室 / 出勤 ' + r.people + '人）<br>'
-        + '<a href="'+r.url+'" target="_blank" rel="noopener">「責任者業務日報」タブを開く</a>'
-        + '<br>黄色いマスは手で書く欄です。作り直すと上書きされるので、印刷してから作り直してください。';
-    })
-    .withFailureHandler(e=>{ $('mgrMsg').textContent = e.message || '作れませんでした'; })
-    .buildManagerReport($('date').value);
 }
 
 function makeDecl(){

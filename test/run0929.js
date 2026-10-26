@@ -2,8 +2,8 @@ const fs = require('fs'), vm = require('vm');
 const { env, BOOKS, props } = require('./gasmock.js');
 const D = require('./data0929.js');
 const ctx = vm.createContext(env);
-const code = fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'Code.gs','utf8') + '\n' +
-             fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'ApaIndicator.gs','utf8');
+const code = fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' +
+             fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8');
 vm.runInContext(code + `
 ;globalThis.__api = { initSpreadsheet, normRoom_, crossCheck_, normOrder_, normDouble_, mergeAll, saveImport,
   saveDayNote, buildDailyReport, buildManagerReport, buildFloorReport, buildSpecialSheet, getBoard, setSpecialNames,

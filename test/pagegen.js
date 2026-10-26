@@ -1,7 +1,7 @@
 const fs=require('fs');
 function page(file){
-  let h = fs.readFileSync('' + require('path').join(__dirname, '../src/') + '' + file + '.html', 'utf8');
-  h = h.replace("<?!= include('Lang') ?>", fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'Lang.html', 'utf8'));
+  let h = fs.readFileSync('' + require('path').join(__dirname, '../') + '' + file + '.html', 'utf8');
+  h = h.replace("<?!= include('Lang') ?>", fs.readFileSync('' + require('path').join(__dirname, '../') + 'Lang.html', 'utf8'));
   const shim = `<script>
   window.google = { script: { run: (function mk(ok, ng){ return new Proxy({}, { get(_, k){
     if (k === 'withSuccessHandler') return f => mk(f, ng);

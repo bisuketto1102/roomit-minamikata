@@ -15,6 +15,7 @@
     --action:#1B5E8C; --warn:#C77A15; --ng:#B5442F;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
   html,body{margin:0;padding:0}
   body{background:var(--bg);color:var(--ink);font-size:16px;line-height:1.6;padding-bottom:32px;
        font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
@@ -25,7 +26,20 @@
   header{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
          padding:12px 14px 0;padding-top:calc(12px + env(safe-area-inset-top))}
   .who{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-  .who select{font-size:18px;font-weight:600;border:0;background:none;max-width:50%;padding:2px 0}
+  .who select{font-size:18px;font-weight:600;border:0;background:none;max-width:62%;padding:2px 0}
+  /* 2段目のボタン列 */
+  .tools{display:flex;gap:6px;margin-top:8px}
+  .tools .modebtn{flex:1 1 0;min-width:0;padding:8px 4px;font-size:13.5px;text-align:center;position:relative}
+  .tools select.modebtn{flex:0 1 92px;padding:8px 2px}
+  .modebtn .n{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:var(--ng);
+              color:#fff;font-size:11px;font-weight:700;margin-left:4px;padding:0 5px;vertical-align:1px}
+  /* 自分が作業中の部屋。横1列（多いときは横にスライド）でヘッダーを高くしない */
+  .mywork{display:flex;gap:6px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
+  .mywork::-webkit-scrollbar{display:none}
+  .mywork:empty{display:none}
+  .mywork .wk{flex:0 0 auto;background:#D3E6F8;color:var(--action);border-radius:14px;padding:5px 11px;font-size:13px;
+              font-weight:600;font-variant-numeric:tabular-nums}
+  .mywork .wk b{font-size:14px;margin-right:4px}
   .who select.warn{color:var(--ng);border-bottom:2px solid var(--ng)}
   .tally{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;text-align:right}
   .tally b{font-size:21px;font-weight:600;color:var(--ink)}
@@ -45,7 +59,7 @@
 
   .cell{text-align:left;transition:transform .08s ease}
   .cell:active{transform:scale(.95)}
-  .cell .rno{display:flex;align-items:center;gap:3px;font-size:17px;font-weight:600;
+  .cell .rno{display:flex;align-items:center;flex-wrap:wrap;gap:2px 3px;font-size:17px;font-weight:600;
              font-variant-numeric:tabular-nums;line-height:1.25;padding:0 2px 2px}
   .cell .rno .sp{margin-left:auto}
   .cell .bdg{font-size:9.5px;font-weight:700;border-radius:3px;padding:1px 4px;line-height:1.4;flex:0 0 auto;color:#fff}
@@ -67,6 +81,11 @@
   .cell .who.doing{color:var(--action);font-weight:700}
   .b-w{background:#C77A15} .b-s{background:#B5442F} .b-ec{background:#3E8E3E}
   .b-sp{background:#E8823A}
+  /* 追加指示がある部屋：コードの角に赤い丸 */
+  .cell.od .bar .code{box-shadow:0 0 0 2px var(--ng)}
+  .cell.od .bar .code::after{content:'';position:absolute;top:-4px;right:-4px;width:9px;height:9px;border-radius:50%;
+                             background:var(--ng);border:1.5px solid #fff}
+  .bar .code{position:relative}
   .bar .code{flex:0 0 auto;min-width:22px;height:21px;background:var(--surface);border-radius:3px;
              display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;padding:0 3px}
   .bar .meta{font-size:10.5px;font-variant-numeric:tabular-nums;color:#fff;white-space:nowrap;
@@ -121,6 +140,9 @@
   .gate.due{background:#FDF4E7;border-left:3px solid var(--warn);color:#8A5D14}
   .gate.skip{background:#F0F2F4;border-left:3px solid #8C959D;color:#4A545E}
   .gate.note{background:#EAF1FA;border-left:3px solid #2F6FBF;color:#1B4E88}
+  /* 業務中の追加指示（管理画面から）。いちばん目立たせる */
+  .gate.od{background:#FDECEA;border:2px solid var(--ng);color:#7E2A1B;font-weight:600}
+  #dOrder:empty{display:none}
 
   .veil{position:fixed;inset:0;background:rgba(10,18,26,.5);opacity:0;pointer-events:none;
         transition:opacity .2s;z-index:30}
@@ -169,7 +191,19 @@
   .btn.fin{background:#2E7D4F}
   .btn[disabled]{opacity:.4}
   .btn.ghost{background:none;color:var(--muted);font-weight:400;font-size:14px;padding:9px;margin-top:7px}
+  /* 退出のすぐ下に置かない。指がずれても届かない距離を空ける */
+  .btn.far{margin-top:26px;font-size:13px;text-decoration:underline;padding:8px}
   .btn.close{background:none;color:var(--muted);font-weight:400;font-size:15px;padding:12px;margin-top:14px}
+
+  /* 今日の指示（清掃指示書の中身を清掃員画面で見る） */
+  .og{margin-top:16px}
+  .og h3{margin:0 0 6px;font-size:13px;font-weight:700;color:var(--muted)}
+  .og .ln{font-size:13.5px;margin:6px 0 5px;font-weight:600;font-variant-numeric:tabular-nums}
+  .og .rs{display:flex;flex-wrap:wrap;gap:6px}
+  .og .rb{border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:15px;font-weight:700;
+          font-variant-numeric:tabular-nums;background:var(--bg)}
+  .og .tx{display:flex;align-items:flex-start;gap:8px;font-size:14px;line-height:1.5;margin:0 0 7px}
+  .og .tx .rb{flex:0 0 auto}
   .pair{display:flex;gap:8px}
   .pair .btn{margin-top:0;border:1px solid var(--line);padding:11px 6px;font-size:13.5px}
   .lock{font-size:13px;color:var(--muted);line-height:1.5}
@@ -184,19 +218,23 @@
 <body>
 
 <header>
+  <!-- 1段目：名前（いちばん大事なので広く）と件数 -->
   <div class="who">
     <select id="staff" aria-label="担当者"></select>
-    <div style="display:flex;align-items:center;gap:9px">
-      <div class="tally"><b id="cDone">0</b> / <span id="cAll">0</span>
-        <span data-t="rooms">室</span><br>
-        <span id="cSub" style="font-size:11.5px"></span></div>
-      <button class="modebtn" id="refBtn" data-t="refresh" onclick="load(true)">更新</button>
-      <button class="modebtn" id="modeBtn" data-t="pick" onclick="togglePick()">選択</button>
-      <button class="modebtn" data-t="collect" onclick="openCollect()">回収</button>
-      <select id="langSel" class="modebtn" onchange="setLang(this.value)" aria-label="Language"></select>
-    </div>
+    <div class="tally"><b id="cDone">0</b> / <span id="cAll">0</span>
+      <span data-t="rooms">室</span><br>
+      <span id="cSub" style="font-size:11.5px"></span></div>
+  </div>
+  <!-- 2段目：ボタン -->
+  <div class="tools">
+    <button class="modebtn" id="refBtn" data-t="refresh" onclick="load(true)">更新</button>
+    <button class="modebtn" id="modeBtn" data-t="pick" onclick="togglePick()">選択</button>
+    <button class="modebtn" onclick="openOrd()"><span data-t="ordBtn">指示</span><span class="n" id="ordN" hidden></span></button>
+    <button class="modebtn" onclick="openCollect()"><span data-t="collect">回収</span><span class="n" id="colN" hidden></span></button>
+    <select id="langSel" class="modebtn" onchange="setLang(this.value)" aria-label="Language"></select>
   </div>
   <div class="meter"><span class="m1" id="bar1"></span><span class="m2" id="bar2"></span></div>
+  <div class="mywork" id="myWork"></div>
   <div class="legend">
     <span><i style="background:var(--c-D)"></i><span data-t="outBefore">アウト前</span></span>
     <span><i style="background:var(--c-O)"></i><span data-t="outDone">アウト済</span></span>
@@ -234,6 +272,7 @@
 <div class="sheet" id="sheet" role="dialog" aria-modal="true">
   <div class="grab"></div>
   <h2><span id="dNo"></span><span class="tag" id="dCode" hidden></span><small id="dKbn"></small></h2>
+  <div id="dOrder"></div>
   <div id="dGate"></div>
   <div class="site">
     <h3 data-t="rec">記録</h3>
@@ -284,9 +323,33 @@
   <button class="btn close" data-t="close" onclick="closeCollect()">閉じる</button>
 </div>
 
+<div class="veil" id="oveil" onclick="closeOrd()"></div>
+<div class="sheet" id="osheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h2 style="font-size:22px"><span data-t="ordTitle">今日の指示</span></h2>
+  <div id="olist"></div>
+  <button class="btn close" data-t="close" onclick="closeOrd()">閉じる</button>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <?!= include('Lang') ?>
+<script>
+/* Lang.html が古いままでも、新しく足した言葉が「enterAs」のような名前で出ないようにする（日本語で補う） */
+(function(){
+  const add = {
+    enterAs:'{n}で入室', exitAs:'{n}で退出', working:'作業中', order:'追加の指示',
+    ddSetBtn:'セット済', ddOkBtn:'確認済', ordBtn:'指示', ordTitle:'今日の指示',
+    oEarly:'アーリーイン', oIn:'{t} イン（{d} までに仕上げ）', oOut:'{t} アウト', oNext:'翌日回し（今日は清掃しない）',
+    oNote:'特記', oNone:'今日の指示はありません', oWnew:'Wメイク 新規', oWrel:'Wメイク 解除',
+    cfOn:'{r}「{w}」を記録します。', cfOff:'{r}「{w}」の記録を消します。',
+    ddSetTask:'DDセット', ddCheckTask:'DDチェック', afterDdSet:'DDセットの完了後',
+    ddNoWork:'DD（備品 不要）なので作業はありません', cancelBtn:'取消', collect:'回収'
+  };
+  if (typeof T === 'undefined' || !T.ja) return;
+  Object.keys(add).forEach(k => { if (!T.ja[k]) T.ja[k] = add[k]; });
+})();
+</script>
 <script>
 const TASKS = ['clean', 'check'];
 let BOARD = {rooms:[], staffList:[], counts:{}}, CUR = null, busy = false;
@@ -373,6 +436,8 @@ function render(b){
   updateCounts();
   $('empty').hidden = b.rooms.length > 0;
   if (same) b.rooms.forEach(paintRoom); else buildRack(b.rooms);
+  if (ORDOPEN) drawOrd();
+  if (COLOPEN) drawCollect();
 }
 
 function syncStaff(list){
@@ -396,6 +461,25 @@ function updateCounts(){
     + (c.dd ? '　DD ' + c.dd : '');
   $('bar1').style.width = c.total ? (c.checked/c.total*100)+'%' : '0';
   $('bar2').style.width = c.total ? ((c.done-c.checked)/c.total*100)+'%' : '0';
+  // 回収したのにチェッカーがまだ確認していない部屋の数
+  const n = BOARD.rooms.filter(r => (r.pickup || r.bag) && !r.collectOk).length;
+  $('colN').hidden = !n; $('colN').textContent = n;
+  // 業務中の追加指示が入っている部屋の数
+  const o = BOARD.rooms.filter(r => r.order).length;
+  $('ordN').hidden = !o; $('ordN').textContent = o;
+  drawMyWork();
+}
+
+/** 自分が入室したまま退出していない部屋。押すとその部屋を開く（中身が変わったときだけ描き直す） */
+function drawMyWork(){
+  const nm = me(), a = [];
+  if (nm) BOARD.rooms.forEach(r => TASKS.forEach(k => {
+    if (r[k].state === 'doing' && r[k].staff === nm) a.push([r.room, taskLabel(r, k), r[k].start]);
+  }));
+  const html = a.map(x => '<button class="wk" onclick="openSheet(\''+esc(x[0])+'\')"><b>'+esc(x[0])+'</b>'
+      + esc(t('working') + ' ' + x[1] + ' ' + x[2] + '〜') + '</button>').join('');
+  const box = $('myWork');
+  if (box.dataset.h !== html){ box.innerHTML = html; box.dataset.h = html; }
 }
 
 function buildRack(rooms){
@@ -428,7 +512,7 @@ function isW(r){ return ['新規','継続','常設'].indexOf(r.dmake) >= 0; }
 
 function sigOf(r){
   return [r.kbn, r.code, r.clean.state, r.check.state, r.clean.minutes, r.dueIn, r.clean.staff,
-          r.dmake, r.eco?1:0, spLeft(r),
+          r.dmake, r.eco?1:0, spLeft(r), r.order ? 1 : 0,
           r.dd?1:0, r.skip?1:0, r.noMake?1:0, r.fullClean?1:0, hasSp(r)?1:0,
           gate(r), SEL.has(r.room)?1:0].join('|');
 }
@@ -481,7 +565,7 @@ function cell(r){
     + (hasSp(r) ? '<span class="bdg b-ex">特</span>' : '')
     + (spLeft(r) ? '<span class="bdg b-sp">特' + spLeft(r) + '</span>' : '');
 
-  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':''].filter(Boolean).join(' ');
+  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':'', r.order?'od':''].filter(Boolean).join(' ');
   const mark = r.kbn === 'OUT' ? (r.code === 'D' ? 'D' : 'O')
              : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : 'S';
 
@@ -611,6 +695,10 @@ function fillSheet(r){
 
   const g = gate(r), m = minsUntil(r.dueIn);
   let html = '';
+  // 業務中の追加指示（管理画面から）。入室ボタンより上に赤枠で出す
+  const od = r.order ? '<div class="gate od"><b>'+esc(t('order'))+'</b>'
+    + r.order.split(' / ').map(x => '・' + esc(x)).join('<br>') + '</div>' : '';
+  if ($('dOrder').innerHTML !== od) $('dOrder').innerHTML = od;
   if (g === 'skip') html += '<div class="gate skip"><b>'+esc(t('g_skip'))+'</b></div>';
 
   if (r.dueIn && r.clean.state !== 'done'){
@@ -662,18 +750,31 @@ function fillSheet(r){
     $('dSteps').innerHTML = '<div class="step"><div class="lock">' + esc(t('ddNoWork')) + '</div></div>';
     return;
   }
+  const dd = !!r.dd;
   $('dSteps').innerHTML = TASKS.map(k=>{
     const name = taskLabel(r, k), w = r[k];
-    const info = w.state==='done'  ? esc(w.staff)+'　'+w.start+' 〜 '+w.finish+'　'+w.minutes+t('min')
-               : w.state==='doing' ? esc(w.staff)+'　'+w.start+' 〜' : '';
+    const info = dd
+      ? (w.state==='done' ? esc(w.staff)+'　'+w.finish : w.state==='doing' ? esc(w.staff)+'　'+w.start+' 〜' : '')
+      : w.state==='done'  ? esc(w.staff)+'　'+w.start+' 〜 '+w.finish+'　'+w.minutes+t('min')
+      : w.state==='doing' ? esc(w.staff)+'　'+w.start+' 〜' : '';
     let btn;
     if (k === 'check' && r.clean.state !== 'done' && w.state === 'todo')
-      btn = '<div class="lock">'+esc(r.dd ? t('afterDdSet') : t('afterClean'))+'</div>';
+      btn = '<div class="lock">'+esc(dd ? t('afterDdSet') : t('afterClean'))+'</div>';
+    // DDセット：入室・退出ではなく1回押すだけ（清掃員は「セット済」、チェッカーは「確認済」）
+    else if (dd && w.state !== 'done')
+      btn = me() ? '<button class="btn fin" onclick="act(\'once\',\''+k+'\')">'
+                   + esc(t(k === 'clean' ? 'ddSetBtn' : 'ddOkBtn') + '（' + me() + '）') + '</button>'
+                 : '<button class="btn fin" disabled>'+esc(t('pickName'))+'</button>';
+    else if (dd)
+      btn = '<button class="btn ghost" onclick="act(\'undo\',\''+k+'\')">'+esc(t('cancelBtn'))+'</button>';
+    // ボタンに押す人の名前を出す。名前を選んでいなければ押せない
     else if (w.state==='todo')
-      btn = '<button class="btn" onclick="act(\'start\',\''+k+'\')">'+esc(t('enter'))+'</button>';
+      btn = me() ? '<button class="btn" onclick="act(\'start\',\''+k+'\')">'+esc(t('enterAs', {n: me()}))+'</button>'
+                 : '<button class="btn" disabled>'+esc(t('pickName'))+'</button>';
     else if (w.state==='doing')
-      btn = '<button class="btn fin" onclick="act(\'finish\',\''+k+'\')">'+esc(t('exit'))+'</button>'
-          + '<button class="btn ghost" onclick="act(\'undo\',\''+k+'\')">'+esc(t('undo'))+'</button>';
+      btn = (me() ? '<button class="btn fin" onclick="act(\'finish\',\''+k+'\')">'+esc(t('exitAs', {n: me()}))+'</button>'
+                  : '<button class="btn fin" disabled>'+esc(t('pickName'))+'</button>')
+          + '<button class="btn ghost far" onclick="act(\'undo\',\''+k+'\')">'+esc(t('undo'))+'</button>';
     else
       btn = '<div class="pair">'
           + '<button class="btn ghost" onclick="act(\'reopen\',\''+k+'\')">'+esc(t('reopen'))+'</button>'
@@ -705,6 +806,9 @@ function predict(r, kind, task){
   if (kind === 'finish') { t.finish = nowHM(); t.minutes = diffMin(t.start); t.state='done'; }
   if (kind === 'reopen') { t.finish = ''; t.minutes = null; t.state='doing'; }
   if (kind === 'undo')   { c[task] = {staff:'',start:'',finish:'',minutes:null,state:'todo'}; }
+  // DDセット：1回押すだけ（入室していなければ今の時刻で入室と退出を同時に記録）。コードは変えない
+  if (kind === 'once')   { if (t.state === 'todo') { t.staff = me(); t.start = nowHM(); }
+                           t.finish = nowHM(); t.minutes = t.start === t.finish ? 0 : diffMin(t.start); t.state='done'; }
   return c;
 }
 
@@ -739,9 +843,10 @@ function act(kind, task){
   const room = CUR.room, staff = me(), before = CUR;
   holdRoom(room);
   apply(room, predict(before, kind, task));
-  toast(room+' '+nm+' '+(kind==='start'?t('enter'):kind==='finish'?t('exit'):t('undo')));
+  toast(room+' '+nm+' '+(kind==='start'?t('enter'):kind==='finish'?t('exit')
+    :kind==='once'?t(task==='clean'?'ddSetBtn':'ddOkBtn'):kind==='undo'?t('undo'):t('reopen')));
 
-  const ok = o => { releaseRoom(room); apply(room, o); REV++; };
+  const ok = o => { releaseRoom(room); if (o && o.__rev) REV = o.__rev; apply(room, o); };
   const bad = e => { releaseRoom(room); apply(room, before);
                      toast(e.message || t('failed')); };
   try {
@@ -750,6 +855,7 @@ function act(kind, task){
     if (kind==='finish') g.clockFinish(room, staff, task);
     if (kind==='reopen') g.clockReopen(room, task);
     if (kind==='undo')   g.clockUndo(room, task);
+    if (kind==='once')   g.clockOnce(room, staff, task);
   } catch (err) {
     bad({ message: t('failed') + '（画面を開き直してください）' });
   }
@@ -757,6 +863,14 @@ function act(kind, task){
 
 function flip(key){
   if (!CUR || PENDING.has(CUR.room)) return;
+  // ゴミ回収・バッグ回収：押し間違いに備えて確認する。外すとチェッカーの確認も消える
+  if (key === 'pickup' || key === 'bag') {
+    if (!me()){ toast(t('pickName')); $('staff').focus(); return; }
+    const v = !CUR[key];
+    if (!confirm(t(v ? 'cfOn' : 'cfOff', {r: CUR.room, w: t(key)}))) return;
+    saveField(key, v);
+    return;
+  }
   // 清掃不要にした部屋はドア前に備品を置くので、DD も一緒に立てる
   if (key === 'skip' && !CUR.skip && !CUR.dd) {
     saveField2({ skip: true, dd: true });
@@ -799,11 +913,69 @@ function sendFlag(room, patch, before){
 
 /** 複数の項目をまとめて保存する */
 /* ---------- 回収の確認（チェッカー） ---------- */
+let COLOPEN = false;
 function openCollect(){
-  drawCollect();
+  COLOPEN = true; drawCollect();
   $('cveil').classList.add('on'); $('csheet').classList.add('on');
 }
-function closeCollect(){ $('cveil').classList.remove('on'); $('csheet').classList.remove('on'); }
+function closeCollect(){ COLOPEN = false; $('cveil').classList.remove('on'); $('csheet').classList.remove('on'); }
+
+/* ---------- 今日の指示（清掃指示書の中身を部屋ごとにまとめて出す） ----------
+ * 取り込んだ部屋の情報から作るので、サーバーの呼び出しは増えない。部屋番号を押すとその部屋が開く。 */
+let ORDOPEN = false;
+function openOrd(){
+  ORDOPEN = true; drawOrd();
+  $('oveil').classList.add('on'); $('osheet').classList.add('on');
+}
+function closeOrd(){ ORDOPEN = false; $('oveil').classList.remove('on'); $('osheet').classList.remove('on'); }
+function goRoom(no){ closeOrd(); openSheet(no); }
+
+function drawOrd(){
+  const R = BOARD.rooms;
+  const rb = no => '<button class="rb" onclick="goRoom(\''+esc(no)+'\')">'+esc(no)+'</button>';
+  const chips = a => '<div class="rs">'+a.map(rb).join('')+'</div>';
+  const sec = (title, body) => body ? '<div class="og"><h3>'+esc(title)+'</h3>'+body+'</div>' : '';
+  /** 同じ値どうしで部屋をまとめる。[値, 部屋の一覧] の並び */
+  const group = fn => { const o = {}; R.forEach(r => { const k = fn(r); if (k) (o[k] = o[k] || []).push(r.room); });
+                        return Object.keys(o).sort().map(k => [k, o[k]]); };
+  const pick = fn => R.filter(fn).map(r => r.room);
+  const list = (title, a) => sec(title, a.length ? chips(a) : '');
+  let h = '';
+
+  // 業務中の追加指示（管理画面から）
+  h += sec(t('order'), R.filter(r => r.order).map(r =>
+    '<div class="tx">'+rb(r.room)+'<span>'+r.order.split(' / ').map(esc).join('<br>')+'</span></div>').join(''));
+
+  // アーリーイン（イン時刻ごと。仕上げの締切つき）
+  h += sec(t('oEarly'), group(r => r.checkIn ? r.checkIn + '|' + (r.dueIn || '') : '').map(([k, a]) => {
+    const p = k.split('|');
+    return '<div class="ln">'+esc(p[1] ? t('oIn', {t: p[0], d: p[1]}) : p[0])+'</div>'+chips(a);
+  }).join(''));
+
+  // レイトアウト（19時以降の翌日回しは別）
+  h += sec(t('lateout'), group(r => (r.kbn !== 'NONE' && r.lateOut) ? r.lateOut : '').map(([k, a]) =>
+    '<div class="ln">'+esc(t('oOut', {t: k}))+'</div>'+chips(a)).join(''));
+  h += sec(t('oNext'), group(r => (r.kbn === 'NONE' && r.lateOut) ? r.lateOut : '').map(([k, a]) =>
+    '<div class="ln">'+esc(t('oOut', {t: k}))+'</div>'+chips(a)).join(''));
+
+  h += list(t('full'),   pick(r => r.fullClean));
+  h += list(t('nomake'), pick(r => r.noMake));
+  h += list(t('extend'), pick(r => r.extend));
+  h += list(t('linen'),  pick(r => r.linen));
+  h += list(t('pop'),    pick(r => r.pop));
+  h += list(t('eco'),    pick(r => r.eco));
+  h += list(t('oWnew'),  pick(r => r.dmake === '新規'));
+  h += list(t('oWrel'),  pick(r => r.dmake === '解除'));
+
+  // 特記（同じ文は1つにまとめる）
+  const notes = {};
+  R.forEach(r => String(r.note || '').split(' / ').map(x => x.trim()).filter(Boolean)
+    .forEach(x => { (notes[x] = notes[x] || []).push(r.room); }));
+  h += sec(t('oNote'), Object.keys(notes).map(x =>
+    '<div class="ln" style="font-weight:400">'+esc(x)+'</div>'+chips(notes[x])).join(''));
+
+  $('olist').innerHTML = h || '<p class="empty" style="padding:24px">'+esc(t('oNone'))+'</p>';
+}
 
 function drawCollect(){
   const list = BOARD.rooms.filter(r => r.pickup || r.bag).sort((a,b) => cmpNo(a.room, b.room));
@@ -867,13 +1039,14 @@ function saveField(key, val){
   if (!CUR) return;
   const room = CUR.room, patch = {};
   patch[key] = val;
+  const before = JSON.parse(JSON.stringify(CUR));   // 失敗したときに戻す元（書き換える前に取る）
   // 回収は押した人と時刻を残す
   if (key === 'pickup' || key === 'bag') {
     if (val && !me()) { toast(t('pickName')); $('staff').focus(); return; }
     patch.__by = me();
     if (val) CUR[key + 'By'] = me() + ' ' + nowHM();
+    else { CUR[key + 'By'] = ''; CUR.collectOk = ''; }
   }
-  const before = JSON.parse(JSON.stringify(CUR));
   holdRoom(room);
   const i = BOARD.rooms.map(x=>x.room).indexOf(room);
   if (i >= 0){ BOARD.rooms[i][key] = val; CUR = BOARD.rooms[i]; }
@@ -925,6 +1098,8 @@ $('langSel').innerHTML = Object.keys(LANG_NAMES)
 
 $('staff').addEventListener('change', e=>{
   if (e.target.value){ localStorage.setItem('staff', e.target.value); e.target.classList.remove('warn'); }
+  drawMyWork();
+  if (CUR) fillSheet(CUR);      // ボタンの名前（「○○で入室」）を選び直した人に合わせる
 });
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !PENDING.size) load(); });
 window.addEventListener('focus', checkRev);

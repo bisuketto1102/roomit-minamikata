@@ -4,9 +4,8 @@
  *
  * OCR は ApaIndicator.gs にある。こちらは触らない。
  *
- * 【重要】この版に差し替えたら
- *   スプレッドシートの「打刻ログ」シートを削除 → initSpreadsheet() を再実行。
- *   本番運用中にやるとその日の記録が消えるので、営業前後に行うこと。
+ * 【版を差し替えたら】initSpreadsheet() を1回実行する。
+ *   見出しを最新にそろえ、足りない列を後ろに足すだけ。シートの削除は要らない（記録は消えない）。
  *************************************************/
 
 const SHEET = { LOG: '打刻ログ', STAFF: 'スタッフ', ARCHIVE: '打刻ログ_保管',
@@ -43,6 +42,9 @@ const DAY_HEAD = [
  *  18 DD / 19 清掃不要 / 20 ノーメイク / 21 フル清掃 / 22 リネン交換依頼
  *  23 延泊 / 24 POP回収 / 25 水本数 / 26 冷蔵庫 / 27 リネン・ゴミ回収
  *  28 現場メモ / 29 指示書特記 / 30 取込時刻
+ *  31-33 特別清掃 / 34 要確認メモ / 36 備品 / 37 バッグ回収 / 38 冷蔵庫(チェック)
+ *  39 Dメイク / 40 ツイン / 41 コネクト / 42 エコ清掃
+ *  43-45 回収の記録 / 46 追加指示
  */
 const LOG_HEAD = [
   '日付','部屋番号','階','コード','区分','予約',
@@ -56,7 +58,8 @@ const LOG_HEAD = [
   '要確認メモ',
   '(未使用)','備品','バッグ回収','冷蔵庫(チェック)',
   'Dメイク','ツイン','コネクト','エコ清掃',
-  'ゴミ回収記録','バッグ回収記録','回収確認'
+  'ゴミ回収記録','バッグ回収記録','回収確認',
+  '追加指示'
 ];
 const NCOL = LOG_HEAD.length;
 
@@ -77,6 +80,9 @@ const FLAG_COL = {
 /** 回収を押した人と時刻を残す列。「上井 10:32」の形 */
 const COLLECT_COL = { pickup: 43, bag: 44, check: 45 };
 const BOOL_FLAGS = ['dd','skip','pickup','spAircon','spDrain','spTv','bag'];
+
+/** 業務中の追加指示（フロントなどから途中で来た指示）。取り込みでは触らない */
+const ORDER_COL = 46;
 
 /**
  * 特別清掃。月内に全室を1周するローテーション。
@@ -131,8 +137,32 @@ function props_() { return PropertiesService.getScriptProperties(); }
 
 let SS_CACHE_ = null;
 function ss_() {
-  if (!SS_CACHE_) SS_CACHE_ = SpreadsheetApp.openById(props_().getProperty('SS_ID'));
+  if (!SS_CACHE_) {
+    SS_CACHE_ = SpreadsheetApp.openById(props_().getProperty('SS_ID'));
+    ensureCols_(SS_CACHE_);
+  }
   return SS_CACHE_;
+}
+
+/**
+ * 列を後ろに足した版に差し替えたとき、initSpreadsheet() を忘れても止まらないようにする。
+ * 打刻ログの列が足りなければ足して見出しをそろえる。確かめた結果は6時間覚えておく。
+ */
+function ensureCols_(ss) {
+  const c = CacheService.getScriptCache(), key = 'NCOL_OK:' + NCOL;
+  if (c.get(key)) return;
+  const log = ss.getSheetByName(SHEET.LOG);
+  if (log) {
+    if (log.getMaxColumns() < NCOL) log.insertColumnsAfter(log.getMaxColumns(), NCOL - log.getMaxColumns());
+    const h = log.getRange(1, 1, 1, NCOL).getValues()[0];
+    if (h.some((x, i) => String(x) !== LOG_HEAD[i])) {
+      log.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
+      // 足した列（追加指示）と回収記録・メモは文字のまま残す
+      const rows = Math.max(log.getMaxRows() - 1, 1);
+      [28, 43, 44, 45, ORDER_COL].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));
+    }
+  }
+  c.put(key, '1', 21600);
 }
 
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'); }
@@ -157,6 +187,13 @@ function withLock_(fn) {
   lock.waitLock(20000);
   try { return fn(); } finally { lock.releaseLock(); }
 }
+/** 時間のかかる作成を同時に2つ走らせない。打刻のロックとは別にする（打刻を待たせないため） */
+function busyGuard_(key, fn) {
+  const c = CacheService.getScriptCache();
+  if (c.get(key)) throw new Error('作成中です。終わるまで1〜2分お待ちください');
+  c.put(key, '1', 300);
+  try { return fn(); } finally { c.remove(key); }
+}
 
 
 /*************************************************
@@ -173,7 +210,7 @@ function doGet(e) {
   return HtmlService.createTemplateFromFile(file)
     .evaluate()
     .setTitle('客室清掃')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -192,14 +229,15 @@ function initSpreadsheet() {
 
   let log = ss.getSheetByName(SHEET.LOG);
   if (!log) log = ss.insertSheet(SHEET.LOG);
-  if (log.getLastRow() === 0) {
-    log.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
-    log.setFrozenRows(1);
-  }
+  // 見出しは毎回最新にそろえる（列を後ろに足しただけなら、シートを消さずにこれで済む）
+  if (log.getMaxColumns() < NCOL) log.insertColumnsAfter(log.getMaxColumns(), NCOL - log.getMaxColumns());
+  log.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
+  log.setFrozenRows(1);
 
   const rows = Math.max(log.getMaxRows() - 1, 1);
   [11, 12, 15, 16].forEach(c => log.getRange(2, c, rows).setNumberFormat('HH:mm'));
-  [7, 8, 9].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));   // 時刻は文字列固定
+  // 部屋番号・時刻・メモ・回収記録・追加指示は文字列固定
+  [2, 7, 8, 9, 28, 43, 44, 45, ORDER_COL].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));
 
   let day = ss.getSheetByName(SHEET.DAY);
   if (!day) day = ss.insertSheet(SHEET.DAY);
@@ -263,7 +301,7 @@ function saveDayNote(date, order, dbl) {
       const v = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
       for (let i = 0; i < v.length; i++) if (normDate_(v[i][0]) === d) { at = i + 2; break; }
     }
-    if (!at) at = sh.getLastRow() + 1;
+    if (!at) at = appendAt_(sh, 1);
 
     sh.getRange(at, 1, 1, DAY_HEAD.length).setValues([row]);
     sh.getRange(at, 6).setWrap(true);
@@ -296,30 +334,50 @@ function saveImport(date, rooms) {
     const sh = ss_().getSheetByName(SHEET.LOG);
     const stamp = new Date();
 
+    // その日の行をまとめて読み、手元で直して、まとめて書き戻す（1セルずつ書くと遅いため）
+    const last = sh.getLastRow();
+    const all = last >= 2 ? sh.getRange(2, 1, last - 1, NCOL).getValues() : [];
     const have = {};
-    if (sh.getLastRow() >= 2) {
-      sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach((r, i) => {
-        if (normDate_(r[0]) === d) have[String(r[1]).trim()] = i + 2;
-      });
-    }
+    all.forEach((r, i) => { if (normDate_(r[0]) === d) have[String(r[1]).trim()] = i; });
 
+    let lo = Infinity, hi = -1;
     const add = [];
     rooms.forEach(r => {
       const vals = importVals_(r);
-      const row = have[r.room];
-      if (row) {
-        IMPORT_COLS.forEach((c, i) => sh.getRange(row, c).setValue(vals[i]));
-        sh.getRange(row, 30).setValue(stamp);
+      const i = have[String(r.room)];
+      if (i != null) {
+        const v = all[i];
+        const prevCode = String(v[3] || '').toUpperCase();
+        const started = !!v[TASK_COL.clean];
+        IMPORT_COLS.forEach((c, k) => { v[c - 1] = vals[k]; });
+        // 現場でアウト済にした・清掃に入った部屋は、取り込み直しても D（アウト前）に戻さない
+        if (r.kbn === 'OUT' && String(v[3]).toUpperCase() === 'D' && (prevCode === 'O' || started)) v[3] = 'O';
+        v[29] = stamp;
+        lo = Math.min(lo, i); hi = Math.max(hi, i);
       } else {
         const line = new Array(NCOL).fill('');
         line[0] = d; line[1] = String(r.room);
-        IMPORT_COLS.forEach((c, i) => { line[c - 1] = vals[i]; });
+        IMPORT_COLS.forEach((c, k) => { line[c - 1] = vals[k]; });
         line[29] = stamp;
         add.push(line);
       }
     });
 
-    if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, NCOL).setValues(add);
+    // 文字のままにしたい列（部屋番号・時刻・メモ・回収記録・追加指示）は先に書式を決めてから書く
+    const textCols = (r0, n) => {
+      const r1 = r0 + n - 1;
+      sh.getRangeList(['B' + r0 + ':B' + r1, 'G' + r0 + ':I' + r1, 'AB' + r0 + ':AB' + r1,
+                       'AQ' + r0 + ':AT' + r1]).setNumberFormat('@');
+    };
+    if (hi >= 0) {
+      textCols(lo + 2, hi - lo + 1);
+      sh.getRange(lo + 2, 1, hi - lo + 1, NCOL).setValues(all.slice(lo, hi + 1));
+    }
+    if (add.length) {
+      const at = appendAt_(sh, add.length);
+      textCols(at, add.length);
+      sh.getRange(at, 1, add.length, NCOL).setValues(add);
+    }
 
     sortLog_();
     CacheService.getScriptCache().removeAll(rooms.map(r => 'L:' + d + ':' + r.room));
@@ -400,7 +458,8 @@ function rowToRoom_(r) {
     fridgeCheck: String(r[37] || ''),
     dmake: String(r[38] || ''), twin: bool_(r[39]), connect: String(r[40] || ''),
     eco: bool_(r[41]),
-    pickupBy: String(r[42] || ''), bagBy: String(r[43] || ''), collectOk: String(r[44] || '')
+    pickupBy: String(r[42] || ''), bagBy: String(r[43] || ''), collectOk: String(r[44] || ''),
+    order: String(r[ORDER_COL - 1] || '').trim()
   };
 }
 
@@ -599,9 +658,46 @@ function sortLog_() {
 function resortLog() { return withLock_(() => { sortLog_(); return { ok: true }; }); }
 
 
+/**
+ * 1部屋の行を読む。行番号はキャッシュを使い、読んだ中身で本当にその部屋か確かめる。
+ * 通常はスプレッドシートを1回読むだけで済む。
+ */
+function readRoomRow_(sh, date, room) {
+  const key = 'L:' + date + ':' + room;
+  const hit = Number(CacheService.getScriptCache().get(key) || 0);
+  if (hit >= 2 && hit <= sh.getLastRow()) {
+    const v = sh.getRange(hit, 1, 1, NCOL).getValues()[0];
+    if (normDate_(v[0]) === date && String(v[1]).trim() === String(room).trim()) return { row: hit, v: v };
+  }
+  const row = findLogRow_(sh, date, room);
+  if (!row) return null;
+  return { row: row, v: sh.getRange(row, 1, 1, NCOL).getValues()[0] };
+}
+
+/** 書き換えた行を1回で書き戻し、画面に返す形にする */
+function writeRoomRow_(sh, date, x) {
+  sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
+  const out = rowToRoom_(x.v);
+  out.__rev = bumpRev_(date);
+  return out;
+}
+
+/**
+ * 下に n 行書き足すときの書き始めの行。シートの行が足りなければ先に足す
+ * （スプレッドシートは最初1000行しかなく、打刻ログは1日179行ずつ増えるため）。
+ */
+function appendAt_(sh, n) {
+  const at = sh.getLastRow() + 1;
+  const need = at + n - 1 - sh.getMaxRows();
+  if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need + 200);
+  return at;
+}
+
+
 /*************************************************
  * 打刻（task = 'clean' | 'check'）
  *  入室 → 退出 の2打刻。清掃が終わるまでチェックには入れない
+ *  どれも「行を1回読む → 手元で直す → 1回で書く」
  *************************************************/
 function clockStart(room, staff, task) {
   return withLock_(() => {
@@ -609,28 +705,19 @@ function clockStart(room, staff, task) {
     const c = TASK_COL[task];
     if (!c) throw new Error('不明な作業です');
 
-    const row = findLogRow_(sh, date, room);
-    if (!row) throw new Error(room + ' は本日の指示に入っていません');
+    const x = readRoomRow_(sh, date, room);
+    if (!x) throw new Error(room + ' は本日の指示に入っていません');
+    const v = x.v;
 
-    if (task === 'check') {
-      const cl = sh.getRange(row, TASK_COL.clean + 2).getValue();
-      if (!cl) throw new Error(room + ' はまだ清掃が終わっていません');
-    }
+    if (task === 'check' && !v[TASK_COL.clean + 1]) throw new Error(room + ' はまだ清掃が終わっていません');
+    if (v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんが完了済みです');
+    if (v[c])     throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんが作業中です');
 
-    const v = sh.getRange(row, c, 1, 3).getValues()[0];
-    if (v[2]) throw new Error(room + ' の' + taskName_(task) + 'は ' + v[0] + ' さんが完了済みです');
-    if (v[1]) throw new Error(room + ' の' + taskName_(task) + 'は ' + v[0] + ' さんが作業中です');
-
-    sh.getRange(row, c, 1, 2).setValues([[staff, new Date()]]);
-
+    v[c - 1] = staff;
+    v[c] = new Date();
     // 清掃に入れたということはお客様はもう出ている。アウト前(D)ならアウト済(O)にする
-    if (task === 'clean') {
-      const code = String(sh.getRange(row, 4).getValue() || '').toUpperCase();
-      if (code === 'D') sh.getRange(row, 4).setValue('O');
-    }
-
-    bumpRev_(date);
-    return oneRoom_(date, room);
+    if (task === 'clean' && String(v[3] || '').toUpperCase() === 'D') v[3] = 'O';
+    return writeRoomRow_(sh, date, x);
   });
 }
 
@@ -640,18 +727,17 @@ function clockFinish(room, staff, task) {
     const c = TASK_COL[task];
     if (!c) throw new Error('不明な作業です');
 
-    const row = findLogRow_(sh, date, room);
-    if (!row) throw new Error(room + ' はまだ開始されていません');
+    const x = readRoomRow_(sh, date, room);
+    if (!x) throw new Error(room + ' はまだ開始されていません');
+    const v = x.v;
 
-    const v = sh.getRange(row, c, 1, 3).getValues()[0];
-    if (v[2]) throw new Error(room + ' の' + taskName_(task) + 'はすでに完了しています');
-    if (!v[1]) throw new Error(room + ' の' + taskName_(task) + 'はまだ開始されていません');
+    if (v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'はすでに完了しています');
+    if (!v[c])    throw new Error(room + ' の' + taskName_(task) + 'はまだ開始されていません');
 
     const end = new Date();
-    const min = Math.max(1, Math.round((end - new Date(v[1])) / 60000));
-    sh.getRange(row, c + 2, 1, 2).setValues([[end, min]]);
-    bumpRev_(date);
-    return oneRoom_(date, room);
+    v[c + 1] = end;
+    v[c + 2] = Math.max(1, Math.round((end - new Date(v[c])) / 60000));
+    return writeRoomRow_(sh, date, x);
   });
 }
 
@@ -660,18 +746,16 @@ function clockReopen(room, task) {
   return withLock_(() => {
     const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
-    const row = findLogRow_(sh, date, room);
-    if (!row) throw new Error(room + ' の記録がありません');
+    const x = readRoomRow_(sh, date, room);
+    if (!x) throw new Error(room + ' の記録がありません');
+    const v = x.v;
 
-    if (task === 'clean' && sh.getRange(row, TASK_COL.check + 1).getValue()) {
+    if (task === 'clean' && v[TASK_COL.check]) {
       throw new Error(room + ' はチェックが始まっています。先にチェックを取り消してください');
     }
-    if (!sh.getRange(row, c + 2).getValue()) {
-      throw new Error(room + ' の' + taskName_(task) + 'はまだ完了していません');
-    }
-    sh.getRange(row, c + 2, 1, 2).setValues([['', '']]);
-    bumpRev_(date);
-    return oneRoom_(date, room);
+    if (!v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'はまだ完了していません');
+    v[c + 1] = ''; v[c + 2] = '';
+    return writeRoomRow_(sh, date, x);
   });
 }
 
@@ -680,15 +764,43 @@ function clockUndo(room, task) {
   return withLock_(() => {
     const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
-    const row = findLogRow_(sh, date, room);
-    if (!row) throw new Error(room + ' の記録がありません');
+    const x = readRoomRow_(sh, date, room);
+    if (!x) throw new Error(room + ' の記録がありません');
+    const v = x.v;
 
-    if (task === 'clean' && sh.getRange(row, TASK_COL.check + 1).getValue()) {
+    if (task === 'clean' && v[TASK_COL.check]) {
       throw new Error(room + ' はチェックが始まっています。先にチェックを取り消してください');
     }
-    sh.getRange(row, c, 1, 4).setValues([['', '', '', '']]);
-    bumpRev_(date);
-    return oneRoom_(date, room);
+    v[c - 1] = ''; v[c] = ''; v[c + 1] = ''; v[c + 2] = '';
+    return writeRoomRow_(sh, date, x);
+  });
+}
+
+/**
+ * DDセット用。入室と退出を1回で記録する（清掃員は「セット済」、チェッカーは「確認済」）。
+ * 入室だけ押してあった部屋（前のやり方）は、その入室時刻のまま退出を入れる。
+ * DD の部屋はお客様が滞在中なので、コード（D/O）は変えない。
+ */
+function clockOnce(room, staff, task) {
+  return withLock_(() => {
+    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const c = TASK_COL[task];
+    if (!c) throw new Error('不明な作業です');
+
+    const x = readRoomRow_(sh, date, room);
+    if (!x) throw new Error(room + ' は本日の指示に入っていません');
+    const v = x.v;
+    const word = task === 'clean' ? 'セット済' : '確認済';
+
+    if (task === 'check' && !v[TASK_COL.clean + 1]) throw new Error(room + ' はまだDDセットが済んでいません');
+    if (v[c + 1]) throw new Error(room + ' は ' + v[c - 1] + ' さんが' + word + 'です');
+
+    const now = new Date();
+    const fresh = !v[c];
+    if (fresh) { v[c - 1] = staff; v[c] = now; }
+    v[c + 1] = now;
+    v[c + 2] = fresh ? 0 : Math.max(1, Math.round((now - new Date(v[c])) / 60000));
+    return writeRoomRow_(sh, date, x);
   });
 }
 
@@ -741,43 +853,41 @@ function setRoomTime(rooms, field, value) {
   });
 }
 
-/** DD / 清掃不要 / 水 / 冷蔵庫 / リネン回収 / メモ */
+/** フラグを手元の行（配列）に書く */
+function putFlag_(v, k, val) {
+  const i = FLAG_COL[k] - 1;
+  if (BOOL_FLAGS.indexOf(k) >= 0) { v[i] = val ? true : ''; return; }
+  if (k === 'water') { v[i] = (val === '' || val == null) ? '' : Number(val); return; }
+  v[i] = String(val == null ? '' : val).trim().slice(0, 200);
+}
+
 /**
- * 1部屋・1回ぶんのフラグ保存。setRoomFlags は179室ぶん読み直して返すので、
- * DD・清掃不要・ゴミ回収のように1タップごとに呼ぶ操作にはこちらを使う。
- * 変えた行だけを読み直して返すので体感が速い。
+ * パッチを行に当てる。
+ * 回収（ゴミ・バッグ）は押した人と時刻を残す。外したら記録も確認も消す。
+ */
+function applyPatch_(v, patch) {
+  const by = String(patch.__by || '').trim();
+  ['pickup', 'bag'].forEach(k => {
+    if (!(k in patch)) return;
+    v[COLLECT_COL[k] - 1] = patch[k] ? (by + ' ' + hm_(new Date())).trim() : '';
+    if (!patch[k]) v[COLLECT_COL.check - 1] = '';
+  });
+  Object.keys(FLAG_COL).forEach(k => { if (k in patch) putFlag_(v, k, patch[k]); });
+}
+
+/**
+ * 1部屋・1回ぶんのフラグ保存（DD・清掃不要・ゴミ回収など1タップごとに呼ぶ操作）。
+ * 行を1回読んで1回書くだけなので軽い。
  */
 function setRoomFlag1(room, patch) {
   return withLock_(() => {
     const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
-    const row = findLogRow_(sh, date, String(room));
-    if (!row) return null;
-
+    const x = readRoomRow_(sh, date, String(room));
+    if (!x) return null;
     // 特別清掃を押したら、月の残りを読み直す
-    if (SPECIAL.some(x => x[0] in patch)) spDoneClear_(date.slice(0, 7));
-
-    // 回収は押した人と時刻を残す。外したら記録も確認も消す
-    const by = String(patch.__by || '').trim();
-    ['pickup', 'bag'].forEach(k => {
-      if (!(k in patch)) return;
-      sh.getRange(row, COLLECT_COL[k])
-        .setValue(patch[k] ? (by + ' ' + hm_(new Date())).trim() : '');
-      if (!patch[k]) sh.getRange(row, COLLECT_COL.check).setValue('');
-    });
-
-    Object.keys(FLAG_COL).forEach(k => {
-      if (!(k in patch)) return;
-      const cell = sh.getRange(row, FLAG_COL[k]);
-      const v = patch[k];
-      if (BOOL_FLAGS.indexOf(k) >= 0) { cell.setValue(v ? true : ''); return; }
-      if (k === 'water') { cell.setValue(v === '' || v == null ? '' : Number(v)); return; }
-      cell.setValue(String(v == null ? '' : v).trim().slice(0, 200));
-    });
-
-    bumpRev_(date);
-    const out = rowToRoom_(sh.getRange(row, 1, 1, NCOL).getValues()[0]);
-    out.__rev = getRev(date);
-    return out;
+    if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));
+    applyPatch_(x.v, patch);
+    return writeRoomRow_(sh, date, x);
   });
 }
 
@@ -788,37 +898,176 @@ function setRoomFlag1(room, patch) {
 function setCollectCheck(room, staff, ok) {
   return withLock_(() => {
     const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
-    const row = findLogRow_(sh, date, String(room));
-    if (!row) throw new Error(room + ' の記録がありません');
-    sh.getRange(row, COLLECT_COL.check)
-      .setValue(ok ? (String(staff || '').trim() + ' ' + hm_(new Date())).trim() : '');
-    bumpRev_(date);
-    const out = rowToRoom_(sh.getRange(row, 1, 1, NCOL).getValues()[0]);
-    out.__rev = getRev(date);
-    return out;
+    const x = readRoomRow_(sh, date, String(room));
+    if (!x) throw new Error(room + ' の記録がありません');
+    x.v[COLLECT_COL.check - 1] = ok ? (String(staff || '').trim() + ' ' + hm_(new Date())).trim() : '';
+    return writeRoomRow_(sh, date, x);
   });
 }
 
 function setRoomFlags(rooms, patch) {
   return withLock_(() => {
     const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
-
+    if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));
     (Array.isArray(rooms) ? rooms : [rooms]).map(String).forEach(room => {
-      const row = findLogRow_(sh, date, room);
-      if (!row) return;
-      Object.keys(FLAG_COL).forEach(k => {
-        if (!(k in patch)) return;
-        const cell = sh.getRange(row, FLAG_COL[k]);
-        const v = patch[k];
-        if (BOOL_FLAGS.indexOf(k) >= 0) { cell.setValue(v ? true : ''); return; }
-        if (k === 'water') { cell.setValue(v === '' || v == null ? '' : Number(v)); return; }
-        cell.setValue(String(v == null ? '' : v).trim().slice(0, 200));
-      });
+      const x = readRoomRow_(sh, date, room);
+      if (!x) return;
+      applyPatch_(x.v, patch);
+      sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
     });
-
     bumpRev_(date);
     return getBoard(date);
   });
+}
+
+
+/*************************************************
+ * 業務中の追加指示
+ *  フロントなどから途中で来た指示を部屋に入れる。
+ *  清掃員画面で部屋を押すと、詳細の一番上に赤い枠で出る。フロアレポートの備考にも載る。
+ *  date を渡さなければ今日。
+ *************************************************/
+function roomNo_(v) {
+  const d = String(v || '').replace(/[^0-9]/g, '');
+  return d ? String(parseInt(d, 10)) : '';
+}
+
+/** rooms は「305 306」「305,306」のような文字でも配列でもよい。すでに指示がある部屋は後ろに足す */
+function addOrder(rooms, text, dateStr) {
+  return withLock_(() => {
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) throw new Error('指示の内容を入れてください');
+    const list = (Array.isArray(rooms) ? rooms : String(rooms || '').split(/[\s,、，・]+/))
+      .map(roomNo_).filter(Boolean);
+    if (!list.length) throw new Error('部屋番号を入れてください');
+
+    const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const added = [], missing = [];
+    [...new Set(list)].forEach(room => {
+      const x = readRoomRow_(sh, date, room);
+      if (!x) { missing.push(room); return; }
+      const prev = String(x.v[ORDER_COL - 1] || '').trim();
+      x.v[ORDER_COL - 1] = ((prev ? prev + ' / ' : '') + t).slice(0, 300);
+      sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
+      added.push(room);
+    });
+    if (added.length) bumpRev_(date);
+    return { added: added, missing: missing, orders: getOrders(date).orders };
+  });
+}
+
+/** 1部屋の指示を書き換える（空にすると消える） */
+function setOrder(room, text, dateStr) {
+  return withLock_(() => {
+    const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const x = readRoomRow_(sh, date, roomNo_(room));
+    if (!x) throw new Error(room + ' はその日の指示に入っていません');
+    x.v[ORDER_COL - 1] = String(text || '').trim().slice(0, 300);
+    sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
+    bumpRev_(date);
+    return getOrders(date);
+  });
+}
+
+/** 指示が入っている部屋の一覧 */
+function getOrders(dateStr) {
+  const date = dateStr || today_();
+  const orders = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
+    .filter(r => String(r[1]).trim()).map(rowToRoom_)
+    .filter(r => r.order)
+    .sort((a, b) => cmpRoom_(a.room, b.room))
+    .map(r => ({ room: r.room, order: r.order, kbn: kbnName_(r.kbn),
+                 state: r.check.state === 'done' ? 'チェック済' : r.clean.state === 'done' ? '清掃済'
+                      : r.clean.state === 'doing' ? '清掃中' : '未着手' }));
+  return { date: date, orders: orders };
+}
+
+
+/*************************************************
+ * 管理画面から1部屋を直す
+ *  コード（区分も作り直す）・フル清掃・ノーメイク・延泊・DD・備品・清掃不要・アパエコ・
+ *  Wメイク・ツイン・締切・IN時刻・レイトアウト・特記・現場メモ・追加指示。
+ *  打刻（入室・退出）と回収の記録には触らない。
+ *  取り込みの列（コード・フル・ノーメイク・Wメイク・時刻・特記など）は、
+ *  あとで取り込み直すと読み取りの値に戻る。
+ *************************************************/
+function getRoomAdmin(room, dateStr) {
+  const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
+  const x = readRoomRow_(sh, date, roomNo_(room));
+  if (!x) throw new Error(room + ' はその日の指示に入っていません');
+  const out = rowToRoom_(x.v);
+  out.dmakeKinds = DMAKE_KINDS;
+  out.codes = IND_CODES;
+  return out;
+}
+
+function setRoomAdmin(room, d, dateStr) {
+  return withLock_(() => {
+    const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const x = readRoomRow_(sh, date, roomNo_(room));
+    if (!x) throw new Error(room + ' はその日の指示に入っていません');
+    const v = x.v;
+    const wasNext = String(v[8] || '') >= '19:00';
+    const was = { code: String(v[3]), full: bool_(v[20]) };
+
+    if ('fullClean' in d) v[20] = d.fullClean ? true : '';
+    if ('noMake' in d)    v[19] = d.noMake ? true : '';
+    if ('extend' in d)    v[22] = d.extend ? true : '';
+    if ('code' in d) {
+      const c = String(d.code || '').toUpperCase();
+      if (IND_CODES.indexOf(c) < 0) throw new Error('不明なコードです: ' + d.code);
+      v[3] = c;
+    }
+    if ('dueIn' in d)   v[6] = hhmm_(d.dueIn);
+    if ('checkIn' in d) v[7] = hhmm_(d.checkIn);
+    if ('lateOut' in d) v[8] = hhmm_(d.lateOut);
+    const isNext = String(v[8] || '') >= '19:00';
+
+    // 19時以降のレイトアウトは翌日回し（清掃対象外）。
+    // それ以外は、コードかフルが変わったとき・翌日回しを外したときだけ区分を作り直す
+    if (isNext) v[4] = 'NONE';
+    else if (wasNext || String(v[3]) !== was.code || bool_(v[20]) !== was.full) v[4] = kbnOf_(v[3], bool_(v[20]));
+
+    if ('dmake' in d) v[38] = DMAKE_KINDS.indexOf(d.dmake) >= 0 ? d.dmake : '';
+    if ('twin' in d)  v[39] = d.twin ? true : '';
+    if ('eco' in d)   v[41] = d.eco ? true : '';
+    if ('note' in d)  v[28] = String(d.note || '').trim().slice(0, 300);
+    if ('order' in d) v[ORDER_COL - 1] = String(d.order || '').trim().slice(0, 300);
+
+    const patch = {};
+    ['dd', 'skip', 'supply', 'memo'].forEach(k => { if (k in d) patch[k] = d[k]; });
+    if (patch.skip === true) patch.dd = true;      // 清掃不要は DD も立てる（清掃員画面と同じ）
+    applyPatch_(v, patch);
+
+    return writeRoomRow_(sh, date, x);
+  });
+}
+
+
+/*************************************************
+ * 人ごとの数（退出まで押した部屋だけ）
+ *  清掃員：清掃・ツイン・DDセット・清掃の平均分
+ *  チェッカー：チェック・DDチェック・チェックの平均分
+ *************************************************/
+function people_(list) {
+  const ppl = {};
+  const P = n => ppl[n] || (ppl[n] = { name: n, clean: 0, tw: 0, dd: 0, minutes: 0, check: 0, ddCheck: 0, checkMin: 0 });
+  list.forEach(r => {
+    if (r.clean.state === 'done') {
+      const p = P(r.clean.staff || '不明');
+      if (r.dd) p.dd++;
+      else if (['OUT','STAY','FULL'].indexOf(r.kbn) >= 0) {
+        p.clean++; p.minutes += r.clean.minutes || 0;
+        if (r.twin) p.tw++;
+      }
+    }
+    if (r.check.state === 'done') {
+      const p = P(r.check.staff || '不明');
+      if (r.dd) p.ddCheck++;
+      else { p.check++; p.checkMin += r.check.minutes || 0; }
+    }
+  });
+  return Object.keys(ppl).map(k => ppl[k]).sort((a, b) => a.name < b.name ? -1 : 1);
 }
 
 
@@ -827,7 +1076,9 @@ function setRoomFlags(rooms, patch) {
  *************************************************/
 function bumpRev_(date) {
   const c = CacheService.getScriptCache(), k = 'rev:' + date;
-  c.put(k, String(Number(c.get(k) || 0) + 1), 21600);
+  const n = Number(c.get(k) || 0) + 1;
+  c.put(k, String(n), 21600);
+  return n;
 }
 
 function getRev(dateStr) {
@@ -911,7 +1162,7 @@ function getSummary(dateStr) {
     return v;
   }).sort((a, b) => a.key < b.key ? -1 : 1);
 
-  return { date: date, staff: shape(byStaff), kbn: shape(byKbn) };
+  return { date: date, staff: shape(byStaff), kbn: shape(byKbn), people: people_(list) };
 }
 
 /** ホテルへ出す申告文 */
@@ -1144,7 +1395,12 @@ const MANUAL_ROWS = [];
 /** 日報の「ロイヤル（増設含む）」に数える区分 */
 const ROYAL_SET = ['新規', '継続', '常設'];
 
+/** 日報（＋責任者業務日報）を作る。重いので同時に2つは走らせない */
 function buildDailyReport(dateStr) {
+  return busyGuard_('busy:daily', () => buildDailyReport_(dateStr));
+}
+
+function buildDailyReport_(dateStr) {
   const date = dateStr || today_();
   const ss = ss_();
   const list = dayBlock_(ss.getSheetByName(SHEET.LOG), date, NCOL)
@@ -1709,7 +1965,12 @@ function zen_(s) {
   return String(s).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 0xFEE0));
 }
 
+/** フロアレポート（全階＋PDF）を作る。重いので同時に2つは走らせない */
 function buildFloorReport(dateStr) {
+  return busyGuard_('busy:floor', () => buildFloorReport_(dateStr));
+}
+
+function buildFloorReport_(dateStr) {
   const date = dateStr || today_();
   const ss = ss_();
   const log = ss.getSheetByName(SHEET.LOG);
@@ -1798,7 +2059,8 @@ function buildFloorReport(dateStr) {
       V[10] = r.clean.start  || '：';
       V[11] = r.clean.finish || '：';
       V[12] = r.clean.staff  || '';
-      V[13] = r.memo || '';
+      // 備考：業務中の追加指示と現場メモ
+      V[13] = [r.order ? '指示：' + r.order : '', r.memo || ''].filter(Boolean).join(' / ');
       const sd = spDay[r.room] || ['', '', ''];
       V[19] = sd[0]; V[20] = sd[1]; V[21] = sd[2];
       V[23] = r.check.start  || '：';
@@ -2448,7 +2710,7 @@ function applyOneSpecial_(room, month, col, day) {
     } else {
       const row = new Array(NCOL).fill('');
       row[0] = target; row[1] = room; row[2] = floorOf_(room); row[col - 1] = true;
-      sh.getRange(sh.getLastRow() + 1, 1, 1, NCOL).setValues([row]);
+      sh.getRange(appendAt_(sh, 1), 1, 1, NCOL).setValues([row]);
       sortLog_();
     }
     bumpRev_(today_());
@@ -2507,7 +2769,7 @@ function appendDailyLog_(row) {
     const v = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
     for (let i = 0; i < v.length; i++) if (normDate_(v[i][0]) === d) { at = i + 2; break; }
   }
-  if (!at) at = sh.getLastRow() + 1;
+  if (!at) at = appendAt_(sh, 1);
   sh.getRange(at, 1, 1, DLOG_HEAD.length).setValues([row]);
 
   // 日付順に並べ直す
@@ -2549,10 +2811,12 @@ function archiveOldLogs() {
     let ar = ss.getSheetByName(SHEET.ARCHIVE);
     if (!ar) {
       ar = ss.insertSheet(SHEET.ARCHIVE);
-      ar.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
       ar.setFrozenRows(1);
     }
-    ar.getRange(ar.getLastRow() + 1, 1, old.length, NCOL).setValues(old);
+    // 新しいシートは26列しかない。列を後ろに足した版のときも同じ。足りない列を足して見出しをそろえる
+    if (ar.getMaxColumns() < NCOL) ar.insertColumnsAfter(ar.getMaxColumns(), NCOL - ar.getMaxColumns());
+    ar.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
+    ar.getRange(appendAt_(ar, old.length), 1, old.length, NCOL).setValues(old);
 
     const keep = all.filter(r => normDate_(r[0]) >= limit);
     sh.getRange(2, 1, last - 1, NCOL).clearContent();
@@ -2563,10 +2827,37 @@ function archiveOldLogs() {
   });
 }
 
-/** 毎朝5時台に走らせる。古い打刻ログを保管へ移すだけ */
+/** 毎朝5時台に走らせる。古い打刻ログを保管へ移し、古いフロアレポートPDFをゴミ箱へ */
 function dailyMaintenance() {
   archiveOldLogs();
   try { cleanupManual_(); } catch (e) {}
+  try { cleanupFloorReports(); } catch (e) {}
+}
+
+/**
+ * フロアレポートPDFを何か月残すか。過ぎたぶんは毎朝ゴミ箱へ移す（ゴミ箱から30日は戻せる）。
+ * フロアレポートは3か月保管が要るとのことなので 3。1か月にするならここを 1 にする。
+ */
+const PDF_KEEP_MONTHS = 3;
+
+/**
+ * 古いフロアレポートPDFをゴミ箱へ移す。
+ * 「フロアレポートPDF」フォルダの「フロアレポート_YYYY-MM-DD.pdf」だけが対象。
+ * 残したい分は別フォルダへ移しておけば消えない。
+ */
+function cleanupFloorReports() {
+  const now = new Date();
+  const limit = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth() - PDF_KEEP_MONTHS, now.getDate()),
+                                     'Asia/Tokyo', 'yyyy-MM-dd');
+  const it = pdfFolder_().getFiles();
+  let n = 0;
+  while (it.hasNext()) {
+    const f = it.next();
+    const m = f.getName().match(/^フロアレポート_(\d{4}-\d{2}-\d{2})\.pdf$/);
+    if (m && m[1] < limit) { f.setTrashed(true); n++; }
+  }
+  Logger.log('古いフロアレポートPDFをゴミ箱へ: ' + n + '件（' + limit + ' より前）');
+  return { trashed: n, limit: limit };
 }
 
 /** トリガーを置く。エディタから1回だけ実行すればよい */

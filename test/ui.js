@@ -4,8 +4,8 @@ const { chromium } = require('playwright');
 const { env } = require('./gasmock.js');
 const D = require('./data0929.js');
 const ctx = vm.createContext(env);
-vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'Code.gs','utf8') + '\n' +
-                fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'ApaIndicator.gs','utf8') + '\n;globalThis.__call = (n, a) => globalThis[n](...a);', ctx);
+vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' +
+                fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8') + '\n;globalThis.__call = (n, a) => globalThis[n](...a);', ctx);
 // 関数宣言は globalThis に乗る
 const call = (n, a) => vm.runInContext(n, ctx)(...a);
 call('initSpreadsheet', []);
@@ -23,8 +23,8 @@ call('saveDayNote', [T, call('normOrder_', [D.ORDER]), call('normDouble_', [D.DO
 call('addOrder', ['405 1201', 'タオル2枚追加']);
 
 function page(file){
-  let h = fs.readFileSync('' + require('path').join(__dirname, '../src/') + '' + file + '.html', 'utf8');
-  h = h.replace("<?!= include('Lang') ?>", fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'Lang.html', 'utf8'));
+  let h = fs.readFileSync('' + require('path').join(__dirname, '../') + '' + file + '.html', 'utf8');
+  h = h.replace("<?!= include('Lang') ?>", fs.readFileSync('' + require('path').join(__dirname, '../') + 'Lang.html', 'utf8'));
   const shim = `<script>
   window.google = { script: { run: (function mk(ok, ng){ return new Proxy({}, { get(_, k){
     if (k === 'withSuccessHandler') return f => mk(f, ng);
@@ -39,7 +39,7 @@ function page(file){
 }
 module.exports = { call, page, T, ss };
 if (require.main === module) (async () => {
-  const br = await chromium.launch();
+  const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
   const pg = await br.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   pg.on('console', m => { if (m.type() === 'error') console.log('console:', m.text()); });
   pg.on('pageerror', e => console.log('pageerror:', e.message));

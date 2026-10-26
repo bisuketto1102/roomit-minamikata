@@ -20,13 +20,13 @@ env.UrlFetchApp.fetchAll = reqs => reqs.map(q => {
   const txt = JSON.stringify(data);
   return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: txt }] } }], usageMetadata: { promptTokenCount: 1500, candidatesTokenCount: 300 } }) };
 });
-vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'Code.gs','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'ApaIndicator.gs','utf8'), ctx);
+vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8'), ctx);
 const call = (n, a) => vm.runInContext(n, ctx)(...a);
 call('initSpreadsheet', []);
 call('ss_', []).getSheetByName('スタッフ').getRange(2,1,2,2).setValues([['上井 勇輔','在籍'],['川原 なつみ','在籍']]);
 const { page } = require('./pagegen.js');
 (async () => {
-  const br = await chromium.launch();
+  const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
   const pg = await br.newPage({ viewport: { width: 430, height: 900 } });
   pg.on('pageerror', e => console.log('pageerror:', e.message));
   pg.on('dialog', d => d.accept());

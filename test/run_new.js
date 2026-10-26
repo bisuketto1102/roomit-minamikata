@@ -2,8 +2,8 @@ const fs = require('fs'), vm = require('vm');
 const { env } = require('./gasmock.js');
 const D = require('./data0929.js');
 const ctx = vm.createContext(env);
-const code = fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'Code.gs','utf8') + '\n' +
-             fs.readFileSync('' + require('path').join(__dirname, '../src/') + 'ApaIndicator.gs','utf8');
+const code = fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' +
+             fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8');
 vm.runInContext(code + `
 ;globalThis.__api = { initSpreadsheet, crossCheck_, normOrder_, normDouble_, mergeAll, saveImport, getBoard,
   clockStart, clockFinish, clockOnce, clockUndo, clockReopen, setRoomFlag1, setRoomFlags, setCollectCheck, addOrder, setOrder, getOrders,
