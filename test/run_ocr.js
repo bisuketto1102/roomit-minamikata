@@ -26,7 +26,7 @@ env.UrlFetchApp.fetchAll = reqs => reqs.map(q => {
   const txt = JSON.stringify(data);
   return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: txt }] } }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 200 } }) };
 });
-vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8')
+vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8') + "\n;/* テスト：管理用の関数は暗証番号なしで中身を直接呼ぶ */ ['mergeAll','getSaved','saveDayNote','getDayNote','saveImport','addOrder','setOrder','getOrders','getRoomAdmin','setRoomAdmin','getReport','getSummary','getSpecial','getStale','setSpecialNames','buildSpecialSheet','buildDailyReport','buildFloorReport','buildManagerReport','getDeclarationText','readIndicator','readIndicatorCrops','readOrder','readDouble','mergeSheets','resortLog'].forEach(n => { this[n] = this[n + '_']; });\n"
   + ';globalThis.__a = { readIndicatorCrops, mergeAll, normOrder_, normDouble_, ROOMS, USAGE_ };', ctx);
 const A = ctx.__a;
 console.log('ROOMS', A.ROOMS.length);

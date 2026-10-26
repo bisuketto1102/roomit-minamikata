@@ -292,13 +292,26 @@ function normYmd(v){
 function todayStr(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 
+/**
+ * サーバーの管理用の関数は、どれも最初の引数で暗証番号を受け取って確かめる。
+ * adminRun().withSuccessHandler(...).getReport(d) と書くと、暗証番号を付けて送る（[j.fn] の呼び方でも同じ）。
+ */
+let PIN = '';
+function adminRun(){
+  const wrap = r => new Proxy({}, { get: (_, k) =>
+    String(k).startsWith('with') ? (...a) => wrap(r[k](...a)) : (...a) => r[k](PIN, ...a) });
+  return wrap(google.script.run);
+}
+
 function unlock(){
+  const pin = $('pin').value;
   google.script.run.withSuccessHandler(ok=>{
-    if (!ok){ $('pinMsg').textContent = '暗証番号が違います'; return; }
+    if (!ok){ $('pinMsg').textContent = '暗証番号が違います（何度もまちがえると10分は開けません）'; return; }
+    PIN = pin;
     $('gate').hidden = true; $('app').hidden = false;
     $('date').value = todayStr(); $('hdrDate').textContent = todayStr();
     refresh();
-  }).checkAdminPin($('pin').value);
+  }).checkAdminPin(pin);
 }
 
 /* ---------- 写真 ---------- */
@@ -466,7 +479,7 @@ function read(){
     finish(got.ind, got.ord, got.dbl || null);
   };
   jobs.forEach(j => {
-    google.script.run
+    adminRun()
       .withSuccessHandler(r => { got[j.key] = r; st[j.key] = '✓ ' + Math.round((Date.now()-t0)/1000) + '秒'; done(); })
       .withFailureHandler(e => {
         st[j.key] = '× 読めず';
@@ -482,7 +495,7 @@ function finish(ind, ord, dbl){
   say('突き合わせ中…');
   const keep = $('bars').innerHTML;   // ダブルメイクが読めなかった知らせは残す
   FINISH_NOTE = keep;
-  google.script.run.withSuccessHandler(show).withFailureHandler(fail)
+  adminRun().withSuccessHandler(show).withFailureHandler(fail)
     .mergeAll(ind, ord, dbl);
 }
 
@@ -551,7 +564,7 @@ function show(res){
 /* ---------- 保存済みを読み込んで直す ---------- */
 function loadSaved(){
   say('読み込み中…');
-  google.script.run
+  adminRun()
     .withSuccessHandler(res=>{
       if (!res.rooms.length){
         $('ocrMsg').textContent = res.date + ' の指示はまだ保存されていません。';
@@ -663,12 +676,12 @@ function save(){
   const rows = ROWS.filter(r=>String(r.room).trim());
   const btn = document.querySelector('.btn.save');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>保存中';
-  google.script.run
+  adminRun()
     .withSuccessHandler(res=>{
       btn.disabled=false; btn.textContent='この内容で保存';
       $('saveMsg').textContent = res.date+' の指示を '+res.saved+' 室ぶん保存しました。';
       // 部屋に紐づかない記録（全室注意・コネクト・作成者など）も残す
-      if (ORDER) google.script.run.saveDayNote($('date').value, ORDER, DBL);
+      if (ORDER) adminRun().saveDayNote($('date').value, ORDER, DBL);
       refresh();
     })
     .withFailureHandler(e=>{
@@ -683,7 +696,7 @@ function addOd(){
   const rooms = $('odRooms').value, text = $('odText').value;
   if (!rooms.trim() || !text.trim()){ $('odMsg').textContent = '部屋番号と指示を入れてください'; return; }
   $('odMsg').innerHTML = '<span class="spin"></span>送信中…';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{
       $('odMsg').textContent = (r.added.length ? r.added.join('、') + ' に入れました。' : '')
         + (r.missing.length ? '　' + r.missing.join('、') + ' はその日の部屋にありません。' : '');
@@ -702,7 +715,7 @@ function drawOd(list){
 }
 function clearOd(room){
   if (!confirm(room + ' の指示を消します。')) return;
-  google.script.run.withSuccessHandler(r=>drawOd(r.orders))
+  adminRun().withSuccessHandler(r=>drawOd(r.orders))
     .withFailureHandler(e=>{ $('odMsg').textContent = e.message || '消せませんでした'; })
     .setOrder(room, '', $('date').value);
 }
@@ -714,7 +727,7 @@ function loadRoom(){
   const no = $('edRoom').value.trim();
   if (!no){ $('edMsg').textContent = '部屋番号を入れてください'; return; }
   $('edMsg').innerHTML = '<span class="spin"></span>呼び出し中…';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{
       ED = r;
       const st = r.check.state === 'done' ? 'チェック済' : r.clean.state === 'done' ? '清掃済'
@@ -748,7 +761,7 @@ function saveRoom(){
     note: $('edNote').value, memo: $('edMemo').value, order: $('edOrder').value
   };
   $('edMsg').innerHTML = '<span class="spin"></span>保存中…';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{
       ED = r;
       $('edMsg').textContent = r.room + ' を保存しました（' + (KBNNAME[r.kbn] || r.kbn) + '）。清掃員画面にもすぐ反映されます。';
@@ -762,7 +775,7 @@ $('edRoom').addEventListener('keydown', e=>{ if (e.key === 'Enter') loadRoom(); 
 /* ---------- 集計 ---------- */
 function refresh(){
   const d = $('date').value;
-  google.script.run.withSuccessHandler(r=>{
+  adminRun().withSuccessHandler(r=>{
     const f = r.floors.map(x=>'<tr><td>'+esc(x.floor)+'</td><td class="n">'+x.out+'</td>'
       +'<td class="n">'+x.stay+'</td><td class="n">'+x.full+'</td><td class="n">'+x.total+'</td>'
       +'<td class="n">'+x.done+'</td><td class="n">'+x.dd.length+'</td>'
@@ -774,13 +787,13 @@ function refresh(){
       + '<td class="n">'+a.dd.length+'</td><td class="n">'+(a.water||'')+'</td></tr>';
   }).getReport(d);
 
-  google.script.run.withSuccessHandler(s=>{
+  adminRun().withSuccessHandler(s=>{
     fillPeople(s.people || []); fill('sumKbn', s.kbn);
   }).getSummary(d);
 
-  google.script.run.withSuccessHandler(r=>drawOd(r.orders)).withFailureHandler(()=>{}).getOrders(d);
+  adminRun().withSuccessHandler(r=>drawOd(r.orders)).withFailureHandler(()=>{}).getOrders(d);
 
-  google.script.run.withSuccessHandler(sp=>{
+  adminRun().withSuccessHandler(sp=>{
     drawSpConf(sp);
     $('special').innerHTML = sp.items.map(it=>{
       const pct = Math.min(100, Math.round(it.done / sp.total * 100));
@@ -800,7 +813,7 @@ function refresh(){
     }).join('');
   }).withFailureHandler(()=>{}).getSpecial(d.slice(0,7));
 
-  google.script.run.withSuccessHandler(res=>{
+  adminRun().withSuccessHandler(res=>{
     $('staleCard').hidden = !res.rows.length;
     $('staleList').innerHTML = res.rows.map(r=>
       '<div class="stalerow"><b>'+esc(r.room)+'</b><span class="tk">'+esc(r.task)+'</span>'
@@ -870,7 +883,7 @@ function drawSpConf(sp){
 function saveSpNames(){
   const names = [$('spName0').value, $('spName1').value, $('spName2').value];
   $('spMsg').innerHTML = '<span class="spin"></span>保存中…';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{ $('spMsg').textContent = '保存しました'; refresh(); })
     .withFailureHandler(e=>{ $('spMsg').textContent = e.message || '保存できませんでした'; })
     .setSpecialNames($('date').value.slice(0,7), names);
@@ -878,7 +891,7 @@ function saveSpNames(){
 
 function makeSpecial(){
   $('spSheetMsg').innerHTML = '<span class="spin"></span>作成中…';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{
       $('spSheetMsg').innerHTML = r.month + ' の特別清掃シートを作りました。<br>'
         + r.items.map(x=>esc(x.name)+' '+x.done+'部屋（残'+x.remain+'）').join('　')
@@ -897,7 +910,7 @@ function showTodo(k){
 function makeDaily(btn){
   if (btn) btn.disabled = true;
   $('dailyMsg').innerHTML = '<span class="spin"></span>作成中…';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{
       if (btn) btn.disabled = false;
       const p = r.pending || {};
@@ -928,7 +941,7 @@ function makeDaily(btn){
 function makeFloor(btn){
   if (btn) btn.disabled = true;
   $('frMsg').innerHTML = '<span class="spin"></span>作成中…（1分ほどかかります）';
-  google.script.run
+  adminRun()
     .withSuccessHandler(r=>{
       if (btn) btn.disabled = false;
       $('frMsg').innerHTML = r.date + ' のフロアレポートを ' + r.floors.length + '階ぶん作りました（'
@@ -944,7 +957,7 @@ function makeFloor(btn){
 }
 
 function makeDecl(){
-  google.script.run.withSuccessHandler(r=>{
+  adminRun().withSuccessHandler(r=>{
     $('decl').value = r.text;
     $('decl').style.display='block'; $('copyBtn').style.display='block';
   }).withFailureHandler(e=>alert(e.message||'作成できませんでした'))

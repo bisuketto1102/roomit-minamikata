@@ -98,7 +98,7 @@ const IND_BOTTOM = ['06F', '05F', '04F', '03F', '02F'];
  * 読み方を変えれば外す場所がずれるので、食い違った部屋だけ人が見れば済む。
  * 一致した部屋は確認しなくてよい、と言い切れるのがこの方式の利点。
  */
-function readIndicator(base64, mimeType) {
+function readIndicator_(base64, mimeType) {
   const key = apiKey_();
   // 2通りの読みは関係がないので同時に投げる（待ち時間は遅いほう1回ぶん）
   const out = callGeminiMany_(key, [
@@ -121,7 +121,7 @@ function readIndicator(base64, mimeType) {
  * 読み方は2通り（上の行から／下の行から）。外す場所がずれるので、食い違いだけ人が見ればよい。
  * PDF は印刷の画面で手書きが無いので、考える量は最小・解像度は高にする。
  *************************************************/
-function readIndicatorCrops(top, bottom) {
+function readIndicatorCrops_(top, bottom) {
   const key = apiKey_();
   const job = (img, part, order) => ({ base64: img, mimeType: 'image/jpeg', hi: true, think: 'minimal',
     prompt: indicatorCropPrompt_(part, order), schema: indicatorRowSchema_() });
@@ -396,7 +396,7 @@ function indicatorSchema_() {
 /*************************************************
  * 2枚目 清掃指示書
  *************************************************/
-function readOrder(base64, mimeType) {
+function readOrder_(base64, mimeType) {
   const parsed = callGemini_(apiKey_(), base64, mimeType, orderPrompt_(), orderSchema_());
   return Object.assign(normOrder_(parsed), { usage: USAGE_ });
 }
@@ -542,7 +542,7 @@ const DMAKE_KINDS = ['新規', '継続', '解除', '常設', '増設予定', '�
 /** 日報の「ロイヤル（増設含む）」に数える色 */
 const ROYAL_KINDS = ['新規', '継続', '常設'];
 
-function readDouble(base64, mimeType) {
+function readDouble_(base64, mimeType) {
   const parsed = callGemini_(apiKey_(), base64, mimeType, doublePrompt_(), doubleSchema_());
   return Object.assign(normDouble_(parsed), { usage: USAGE_ });
 }
@@ -694,7 +694,7 @@ function applyOrderRules_(rooms, order) {
   return fixed;
 }
 
-function mergeSheets(rooms, order, dbl) {
+function mergeSheets_(rooms, order, dbl) {
   const ruled = applyOrderRules_(rooms, order);
 
   const byRoom = {};
@@ -883,11 +883,11 @@ function verify_(rooms, order, orphan, ruled) {
 }
 
 /** 集計ボックスを検算に渡すための入口 */
-function mergeAll(indicator, order, dbl) {
+function mergeAll_(indicator, order, dbl) {
   const o = order;
   o.__box   = indicator.counts;
   o.__cross = indicator.cross || {};
-  return mergeSheets(indicator.rooms, o, dbl || null);
+  return mergeSheets_(indicator.rooms, o, dbl || null);
 }
 
 

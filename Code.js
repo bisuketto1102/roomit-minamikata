@@ -269,14 +269,14 @@ function initSpreadsheet() {
 
 /*************************************************
  * 取り込んだ内容を保存する
- *  mergeAll() の戻り値をそのまま渡す
+ *  mergeAll_() の戻り値をそのまま渡す
  *  打刻と現場フラグには一切触れない
  *************************************************/
 /**
  * その日ぜんぶに関わる情報を保存する。同じ日付の行があれば書き換える。
  * order は清掃指示書、dbl はダブルメイク指示書の読み取り結果。
  */
-function saveDayNote(date, order, dbl) {
+function saveDayNote_(date, order, dbl) {
   return withLock_(() => {
     const d = date || today_();
     const sh = ss_().getSheetByName(SHEET.DAY);
@@ -310,7 +310,7 @@ function saveDayNote(date, order, dbl) {
 }
 
 /** 指定日の日次メモを読み出す */
-function getDayNote(dateStr) {
+function getDayNote_(dateStr) {
   const d = dateStr || today_();
   const sh = ss_().getSheetByName(SHEET.DAY);
   if (!sh || sh.getLastRow() < 2) return null;
@@ -328,7 +328,7 @@ function getDayNote(dateStr) {
 }
 
 
-function saveImport(date, rooms) {
+function saveImport_(date, rooms) {
   return withLock_(() => {
     const d = date || today_();
     const sh = ss_().getSheetByName(SHEET.LOG);
@@ -476,7 +476,7 @@ function task_(staff, start, finish, min) {
  * 取り込み直さずに区分や付帯作業を直したいときに使う。
  * 打刻や現場フラグは返さない（保存時にも触らないため）。
  */
-function getSaved(dateStr) {
+function getSaved_(dateStr) {
   const date = dateStr || today_();
   const rooms = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
     .filter(r => String(r[1]).trim())
@@ -655,7 +655,7 @@ function sortLog_() {
   rng.setValues(v);
 }
 
-function resortLog() { return withLock_(() => { sortLog_(); return { ok: true }; }); }
+function resortLog_() { return withLock_(() => { sortLog_(); return { ok: true }; }); }
 
 
 /**
@@ -933,7 +933,7 @@ function roomNo_(v) {
 }
 
 /** rooms は「305 306」「305,306」のような文字でも配列でもよい。すでに指示がある部屋は後ろに足す */
-function addOrder(rooms, text, dateStr) {
+function addOrder_(rooms, text, dateStr) {
   return withLock_(() => {
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) throw new Error('指示の内容を入れてください');
@@ -952,12 +952,12 @@ function addOrder(rooms, text, dateStr) {
       added.push(room);
     });
     if (added.length) bumpRev_(date);
-    return { added: added, missing: missing, orders: getOrders(date).orders };
+    return { added: added, missing: missing, orders: getOrders_(date).orders };
   });
 }
 
 /** 1部屋の指示を書き換える（空にすると消える） */
-function setOrder(room, text, dateStr) {
+function setOrder_(room, text, dateStr) {
   return withLock_(() => {
     const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
     const x = readRoomRow_(sh, date, roomNo_(room));
@@ -965,12 +965,12 @@ function setOrder(room, text, dateStr) {
     x.v[ORDER_COL - 1] = String(text || '').trim().slice(0, 300);
     sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
     bumpRev_(date);
-    return getOrders(date);
+    return getOrders_(date);
   });
 }
 
 /** 指示が入っている部屋の一覧 */
-function getOrders(dateStr) {
+function getOrders_(dateStr) {
   const date = dateStr || today_();
   const orders = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
     .filter(r => String(r[1]).trim()).map(rowToRoom_)
@@ -991,7 +991,7 @@ function getOrders(dateStr) {
  *  取り込みの列（コード・フル・ノーメイク・Wメイク・時刻・特記など）は、
  *  あとで取り込み直すと読み取りの値に戻る。
  *************************************************/
-function getRoomAdmin(room, dateStr) {
+function getRoomAdmin_(room, dateStr) {
   const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
   const x = readRoomRow_(sh, date, roomNo_(room));
   if (!x) throw new Error(room + ' はその日の指示に入っていません');
@@ -1001,7 +1001,7 @@ function getRoomAdmin(room, dateStr) {
   return out;
 }
 
-function setRoomAdmin(room, d, dateStr) {
+function setRoomAdmin_(room, d, dateStr) {
   return withLock_(() => {
     const date = dateStr || today_(), sh = ss_().getSheetByName(SHEET.LOG);
     const x = readRoomRow_(sh, date, roomNo_(room));
@@ -1090,7 +1090,7 @@ function getRev(dateStr) {
  * 集計（フロアレポートの報告欄に対応）
  *  アウト / ステイ / フルメイク / トータル / DD / 水
  *************************************************/
-function getReport(dateStr) {
+function getReport_(dateStr) {
   const date = dateStr || today_();
   const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
     .filter(r => String(r[1]).trim()).map(rowToRoom_);
@@ -1133,7 +1133,7 @@ function getReport(dateStr) {
 }
 
 /** 清掃員別・区分別の当日集計 */
-function getSummary(dateStr) {
+function getSummary_(dateStr) {
   const date = dateStr || today_();
   const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
     .filter(r => String(r[1]).trim()).map(rowToRoom_);
@@ -1166,9 +1166,9 @@ function getSummary(dateStr) {
 }
 
 /** ホテルへ出す申告文 */
-function getDeclarationText(dateStr) {
+function getDeclarationText_(dateStr) {
   const date = dateStr || today_();
-  const rep = getReport(date);
+  const rep = getReport_(date);
   const md = date.replace(/^\d{4}-/, '').replace('-', '/');
   const a = rep.all;
 
@@ -1233,7 +1233,7 @@ function getSpecialNames(ym) {
  * 3枠目（ホテル指定で毎月変わる自由入力の枠）は、空欄なら今の項目をそのまま残す。
  * 責任者が書き換えたときだけ変わる。
  */
-function setSpecialNames(ym, names) {
+function setSpecialNames_(ym, names) {
   const month = ym || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
   const cur = getSpecialNames(month).names;
   const v = [0, 1, 2].map(i => {
@@ -1284,7 +1284,7 @@ function getRoomSpecial(room) {
   return out;
 }
 
-function getSpecial(ym) {
+function getSpecial_(ym) {
   const month = ym || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
   const conf = getSpecialNames(month);
   const sh = ss_().getSheetByName(SHEET.LOG);
@@ -1355,7 +1355,7 @@ function daySpecial_(date) {
  * 入室したまま退出していない工程を返す。
  * 押し忘れは所要時間が丸ごと欠けるので当日中に拾いたい
  */
-function getStale(dateStr, minMinutes) {
+function getStale_(dateStr, minMinutes) {
   const date = dateStr || today_();
   const limit = minMinutes == null ? 60 : Number(minMinutes);
   const now = new Date();
@@ -1396,7 +1396,7 @@ const MANUAL_ROWS = [];
 const ROYAL_SET = ['新規', '継続', '常設'];
 
 /** 日報（＋責任者業務日報）を作る。重いので同時に2つは走らせない */
-function buildDailyReport(dateStr) {
+function buildDailyReport_(dateStr) {
   return busyGuard_('busy:daily', () => buildDailyReport_(dateStr));
 }
 
@@ -1450,7 +1450,7 @@ function buildDailyReport_(dateStr) {
   });
   const floors = Object.keys(byFloor).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-  const note = getDayNote(date);
+  const note = getDayNote_(date);
 
   const n = {
     order:  target.length,
@@ -1715,7 +1715,7 @@ function buildDailyReport_(dateStr) {
 
   // 責任者業務日報も同じ日付で作る
   let mgr = null;
-  try { mgr = buildManagerReport(date); } catch (e) { mgr = { error: e.message }; }
+  try { mgr = buildManagerReport_(date); } catch (e) { mgr = { error: e.message }; }
 
   return { date: date, url: ss.getUrl() + '#gid=' + sh.getSheetId(),
            undone: undone.length, people: Object.keys(who).length, last: last,
@@ -1966,7 +1966,7 @@ function zen_(s) {
 }
 
 /** フロアレポート（全階＋PDF）を作る。重いので同時に2つは走らせない */
-function buildFloorReport(dateStr) {
+function buildFloorReport_(dateStr) {
   return busyGuard_('busy:floor', () => buildFloorReport_(dateStr));
 }
 
@@ -2195,7 +2195,7 @@ const PUBLIC_LEFT  = ['客室窓ガラス（外面）', '1階エントランス�
 const PUBLIC_RIGHT = ['1階テナントガラス面清掃', '', ''];
 const PUBLIC_ROWS  = PUBLIC_LEFT.concat(PUBLIC_RIGHT);   // 手書き欄の保存で使う並び
 
-function buildManagerReport(dateStr) {
+function buildManagerReport_(dateStr) {
   const date = dateStr || today_();
   const ss = ss_();
   const list = dayBlock_(ss.getSheetByName(SHEET.LOG), date, NCOL)
@@ -2440,7 +2440,7 @@ function buildManagerReport(dateStr) {
            clean: n.clean, people: attend.length };
 }
 
-function buildSpecialSheet(ym) {
+function buildSpecialSheet_(ym) {
   const month = ym || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
   const ss = ss_();
   const conf = getSpecialNames(month);
@@ -2721,11 +2721,11 @@ function applyOneSpecial_(room, month, col, day) {
 /*************************************************
  * テスト用：指定した日を「1日終わった状態」にする
  *  日報・業務日報・フロアレポートの出来を確かめるためのもの。本番の日には使わない。
- *  エディタで testFinishDay('2026-09-29') のように日付を入れて実行する。
+ *  エディタで testFinishDay_('2026-09-29') のように日付を入れて実行する。
  *  清掃対象（DD以外）は清掃・チェック完了、DD（備品 要）はDDセット・DDチェック完了にする。
  *  すでに入っている打刻は触らない。担当者はスタッフ名簿から順番に入れる。
  *************************************************/
-function testFinishDay(dateStr) {
+function testFinishDay_(dateStr) {
   const date = dateStr || today_();
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEET.LOG);
@@ -2831,7 +2831,7 @@ function archiveOldLogs() {
 function dailyMaintenance() {
   archiveOldLogs();
   try { cleanupManual_(); } catch (e) {}
-  try { cleanupFloorReports(); } catch (e) {}
+  try { cleanupFloorReports_(); } catch (e) {}
 }
 
 /**
@@ -2845,7 +2845,7 @@ const PDF_KEEP_MONTHS = 3;
  * 「フロアレポートPDF」フォルダの「フロアレポート_YYYY-MM-DD.pdf」だけが対象。
  * 残したい分は別フォルダへ移しておけば消えない。
  */
-function cleanupFloorReports() {
+function cleanupFloorReports_() {
   const now = new Date();
   const limit = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth() - PDF_KEEP_MONTHS, now.getDate()),
                                      'Asia/Tokyo', 'yyyy-MM-dd');
@@ -2870,7 +2870,7 @@ function setupTrigger() {
   Logger.log('毎朝5時台の整理を設置しました');
 }
 
-function removeTrigger() {
+function removeTrigger_() {
   ScriptApp.getProjectTriggers().forEach(t => {
     if (t.getHandlerFunction() === 'dailyMaintenance') ScriptApp.deleteTrigger(t);
   });
@@ -2880,5 +2880,55 @@ function removeTrigger() {
 
 function checkAdminPin(pin) {
   const set = props_().getProperty('ADMIN_PIN');
-  return !!set && String(pin) === String(set);
+  if (!set) return false;
+  // 総当たり対策：10分に8回まちがえたら、10分は正しい番号でも通さない（全員で共通）
+  const c = CacheService.getScriptCache(), k = 'pinFail';
+  if (Number(c.get(k) || 0) >= 8) return false;
+  if (String(pin) === String(set)) return true;
+  // まちがえたときだけ数え上げを1本ずつにする（打刻の script lock とは別の user lock）
+  let lk = null;
+  try { lk = LockService.getUserLock(); } catch (e) {}
+  if (!lk) c.put(k, String(Number(c.get(k) || 0) + 1), 600);
+  else if (lk.tryLock(5000)) {
+    try { c.put(k, String(Number(c.get(k) || 0) + 1), 600); } finally { lk.releaseLock(); }
+  } else c.put(k, '8', 600);
+  Utilities.sleep(800);   // 総当たりを遅くする
+  return false;
 }
+
+/*************************************************
+ * 管理画面から呼ぶ関数の入口（暗証番号つき）
+ *  /exec は誰でも開けて、google.script.run で名前の最後に _ が無い関数を直接呼べる。
+ *  画面のロックだけでは守れないので、ここで暗証番号を確かめてから中身（_ 付き）を動かす。
+ *  管理画面は adminRun() で、どの呼び出しにも暗証番号を最初に付けて送る。
+ *************************************************/
+function needAdmin_(pin) {
+  if (!checkAdminPin(pin)) throw new Error('暗証番号が確かめられませんでした。管理画面を開き直してください');
+}
+function mergeAll(pin, ...a) { needAdmin_(pin); return mergeAll_(...a); }
+function getSaved(pin, ...a) { needAdmin_(pin); return getSaved_(...a); }
+function saveDayNote(pin, ...a) { needAdmin_(pin); return saveDayNote_(...a); }
+function getDayNote(pin, ...a) { needAdmin_(pin); return getDayNote_(...a); }
+function saveImport(pin, ...a) { needAdmin_(pin); return saveImport_(...a); }
+function addOrder(pin, ...a) { needAdmin_(pin); return addOrder_(...a); }
+function setOrder(pin, ...a) { needAdmin_(pin); return setOrder_(...a); }
+function getOrders(pin, ...a) { needAdmin_(pin); return getOrders_(...a); }
+function getRoomAdmin(pin, ...a) { needAdmin_(pin); return getRoomAdmin_(...a); }
+function setRoomAdmin(pin, ...a) { needAdmin_(pin); return setRoomAdmin_(...a); }
+function getReport(pin, ...a) { needAdmin_(pin); return getReport_(...a); }
+function getSummary(pin, ...a) { needAdmin_(pin); return getSummary_(...a); }
+function getSpecial(pin, ...a) { needAdmin_(pin); return getSpecial_(...a); }
+function getStale(pin, ...a) { needAdmin_(pin); return getStale_(...a); }
+function setSpecialNames(pin, ...a) { needAdmin_(pin); return setSpecialNames_(...a); }
+function buildSpecialSheet(pin, ...a) { needAdmin_(pin); return buildSpecialSheet_(...a); }
+function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReport_(...a); }
+function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReport_(...a); }
+function buildManagerReport(pin, ...a) { needAdmin_(pin); return buildManagerReport_(...a); }
+function getDeclarationText(pin, ...a) { needAdmin_(pin); return getDeclarationText_(...a); }
+function readIndicator(pin, ...a) { needAdmin_(pin); return readIndicator_(...a); }
+function readIndicatorCrops(pin, ...a) { needAdmin_(pin); return readIndicatorCrops_(...a); }
+function readOrder(pin, ...a) { needAdmin_(pin); return readOrder_(...a); }
+function readDouble(pin, ...a) { needAdmin_(pin); return readDouble_(...a); }
+function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
+function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
+
