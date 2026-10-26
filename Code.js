@@ -221,6 +221,7 @@ function include(name) {
 
 function doGet(e) {
   const page = (e && e.parameter && e.parameter.p) || 'staff';
+  if (page === 'instr') return instrJson_(e.parameter.d ? normDate_(e.parameter.d) : today_());
   const file = page === 'admin' ? 'Admin' : page === 'test' ? 'Test' : 'Index';
   const out = HtmlService.createTemplateFromFile(file)
     .evaluate()
@@ -257,6 +258,72 @@ function setupAppIcon() {
   HtmlService.createHtmlOutput('').setFaviconUrl(u);   // URLが使えない形ならここで止まる
   Logger.log('OK ' + u);
   return u;
+}
+
+
+/*************************************************
+ * 朝の読み取り確認用（チェック担当とは別の定期実行が見る）
+ *  読み取りに使った紙の写真をドライブ「清掃アプリ_指示書写真_南方」に残す（30日で片付け）。
+ *  保存された内容は ?p=instr&d=日付 で JSON にして返す（名前は含まない、見るだけ）。
+ *  写真の保存に失敗しても読み取りは止めない。
+ *************************************************/
+const PHOTO_FOLDER = '清掃アプリ_指示書写真_南方';
+function photoFolder_() {
+  const id = props_().getProperty('PHOTO_FOLDER_ID');
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  const it = DriveApp.getFoldersByName(PHOTO_FOLDER);
+  let f = null;
+  while (it.hasNext()) { const x = it.next(); if (!x.isTrashed()) { f = x; break; } }   // ゴミ箱の中の同名は使わない
+  if (!f) f = DriveApp.createFolder(PHOTO_FOLDER);
+  props_().setProperty('PHOTO_FOLDER_ID', f.getId());
+  return f;
+}
+function savePhoto_(base64, mimeType, kind) {
+  try {
+    if (!base64) return;
+    const folder = photoFolder_();
+    const mt = mimeType || 'image/jpeg', ext = /pdf/.test(mt) ? '.pdf' : /png/.test(mt) ? '.png' : '.jpg';
+    const name = '指示書_' + today_() + '_' + kind + '_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'HHmmss') + ext;
+    const file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(base64), mt, name));
+    // 保存するときに、保存した日付の名前に付け直す（読み取りのあとで日付を直すことがあるため）
+    const c = CacheService.getScriptCache();
+    const ids = JSON.parse(c.get('photoPending') || '[]'); ids.push(file.getId());
+    c.put('photoPending', JSON.stringify(ids.slice(-20)), 21600);
+    // 30日より前の写真の片付けは1日1回だけ（読み取りを遅くしない）
+    const today = today_();
+    if (props_().getProperty('PHOTO_CLEAN') !== today) {
+      props_().setProperty('PHOTO_CLEAN', today);
+      const limit = Date.now() - 30 * 24 * 3600 * 1000;
+      const files = folder.getFiles();
+      while (files.hasNext()) { const f = files.next(); if (!f.isTrashed() && f.getDateCreated().getTime() < limit) f.setTrashed(true); }
+    }
+  } catch (err) { console.warn('写真を保存できませんでした: ' + err); }
+}
+/** 保存したとき：まだ保存していない写真の名前を、保存した日付に付け直す */
+function renamePendingPhotos_(date) {
+  try {
+    const c = CacheService.getScriptCache();
+    const ids = JSON.parse(c.get('photoPending') || '[]');
+    ids.forEach(id => {
+      try { const f = DriveApp.getFileById(id); f.setName(String(f.getName()).replace(/^指示書_\d{4}-\d{2}-\d{2}_/, '指示書_' + date + '_')); } catch (e) {}
+    });
+    c.remove('photoPending');
+  } catch (err) { console.warn('写真の名前を直せませんでした: ' + err); }
+}
+
+/** ?p=instr&d=日付：保存された内容（3枚の紙から入れたもの）を JSON で返す。清掃員の名前・打刻は含まない */
+function instrJson_(date) {
+  const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
+    .filter(r => String(r[1]).trim()).map(rowToRoom_).sort((a, b) => cmpRoom_(a.room, b.room));
+  const rooms = list.map(r => ({
+    room: r.room, floor: r.floor, code: r.code, kbn: r.kbn, reserved: r.reserved,
+    dueIn: r.dueIn, checkIn: r.checkIn, lateOut: r.lateOut,
+    fullClean: r.fullClean, noMake: r.noMake, eco: r.eco, linen: r.linen, extend: r.extend,
+    dmake: r.dmake, twin: r.twin, connect: r.connect, note: r.note,
+    cleanStarted: r.clean.state !== 'todo'   // 入室すると D→O になる。紙と違って見えても読み違いではない
+  }));
+  return ContentService.createTextOutput(JSON.stringify({ date: date, rooms: rooms, note: getDayNote_(date) }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 
@@ -374,6 +441,7 @@ function getDayNote_(dateStr) {
 
 
 function saveImport_(date, rooms) {
+  renamePendingPhotos_(date || today_());
   return withLock_(() => {
     const d = date || today_();
     const sh = ss_().getSheetByName(SHEET.LOG);
@@ -1275,7 +1343,11 @@ function getStaffAverages_(from, to) {
   const rows = [];
   const read = sh => {
     if (!sh || sh.getLastRow() < 2) return;
-    sh.getRange(2, 1, sh.getLastRow() - 1, 21).getValues().forEach(r => rows.push(r));
+    // 日付の列だけ先に読み、期間の最初の日より前の行は読まない（保管シートは毎日増えるため）
+    const last = sh.getLastRow(), d = sh.getRange(2, 1, last - 1, 1).getValues();
+    let s = 0;
+    if (from) { s = d.findIndex(r => normDate_(r[0]) >= from); if (s < 0) return; }
+    sh.getRange(2 + s, 1, last - 1 - s, 21).getValues().forEach(r => rows.push(r));
   };
   read(ss.getSheetByName(SHEET.LOG));
   if (!from || from < keepFrom_()) read(ss.getSheetByName(SHEET.ARCHIVE));
@@ -1293,7 +1365,7 @@ function getStaffAverages_(from, to) {
   // 空白の違い（全角・2つ続き）だけの名前は1人にまとめる
   const nm = v => String(v || '').replace(/[\s　]+/g, ' ').trim() || '不明';
   const P = name => people[name] || (people[name] = {
-    name: name, days: {}, clean: box(), check: box(),
+    name: name, days: {}, cleanDays: {}, checkDays: {}, clean: box(), check: box(),
     cleanOther: 0, checkOther: 0, ddSet: 0, ddCheck: 0
   });
 
@@ -1308,7 +1380,7 @@ function getStaffAverages_(from, to) {
     [['clean', 10], ['check', 14]].forEach(([task, c]) => {
       if (!r[c] || !r[c + 1]) return;          // 入室と退出がそろった部屋だけ
       const p = P(nm(r[c - 1])), min = Number(r[c + 2]) || 0;
-      p.days[d] = 1; days[d] = 1;
+      p.days[d] = 1; days[d] = 1; p[task + 'Days'][d] = 1;
       if (dd) { p[task === 'clean' ? 'ddSet' : 'ddCheck']++; return; }
       if (AVG_KBN.indexOf(kbn) < 0) { p[task + 'Other']++; return; }
       add(p[task][kbn], min); add(team[task][kbn], min);
@@ -1321,18 +1393,20 @@ function getStaffAverages_(from, to) {
   const staff = Object.keys(people).map(name => {
     const p = people[name], dn = Object.keys(p.days).length;
     const cleanDone = done(p.clean, p.cleanOther), checkDone = done(p.check, p.checkOther);
-    const per = v => dn && v ? Math.round(v / dn * 10) / 10 : null;   // やっていない作業は出さない
+    // 1日あたりは、その作業をした日で割る（チェックだけの日は清掃の日に数えない）。やっていない作業は出さない
+    const cd = Object.keys(p.cleanDays).length, kd = Object.keys(p.checkDays).length;
+    const per = (v, n) => n && v ? Math.round(v / n * 10) / 10 : null;
     return {
-      name: name, days: dn, clean: finBox(p.clean), check: finBox(p.check),
+      name: name, days: dn, cleanDays: cd, checkDays: kd, clean: finBox(p.clean), check: finBox(p.check),
       cleanDone: cleanDone, checkDone: checkDone, ddSet: p.ddSet, ddCheck: p.ddCheck,
-      cleanPerDay: per(cleanDone), checkPerDay: per(checkDone),
+      cleanPerDay: per(cleanDone, cd), checkPerDay: per(checkDone, kd),
       ex: AVG_KBN.reduce((a, k) => a + p.clean[k].ex + p.check[k].ex, 0)
     };
   }).sort((a, b) => (b.cleanDone + b.checkDone + b.ddSet + b.ddCheck) - (a.cleanDone + a.checkDone + a.ddSet + a.ddCheck));
 
   // 全体の1人1日あたりは、その作業をした人の出勤日だけで割る
   const perAll = key => {
-    const who = staff.filter(p => p[key + 'Done'] > 0), dn = who.reduce((a, p) => a + p.days, 0);
+    const who = staff.filter(p => p[key + 'Done'] > 0), dn = who.reduce((a, p) => a + p[key + 'Days'], 0);
     return dn ? Math.round(who.reduce((a, p) => a + p[key + 'Done'], 0) / dn * 10) / 10 : null;
   };
   return { from: from || '', to: to || '', limit: AVG_LIMIT_MIN, days: Object.keys(days).length,
@@ -3118,10 +3192,11 @@ function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReportG
 function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReportGuarded_(...a); }
 function buildManagerReport(pin, ...a) { needAdmin_(pin); return buildManagerReport_(...a); }
 function getDeclarationText(pin, ...a) { needAdmin_(pin); return getDeclarationText_(...a); }
-function readIndicator(pin, ...a) { needAdmin_(pin); return readIndicator_(...a); }
-function readIndicatorCrops(pin, ...a) { needAdmin_(pin); return readIndicatorCrops_(...a); }
-function readOrder(pin, ...a) { needAdmin_(pin); return readOrder_(...a); }
-function readDouble(pin, ...a) { needAdmin_(pin); return readDouble_(...a); }
+function readIndicator(pin, ...a) { needAdmin_(pin); const r = readIndicator_(...a); savePhoto_(a[0], a[1], 'インジケーター'); return r; }
+function readIndicatorCrops(pin, ...a) { needAdmin_(pin); const r = readIndicatorCrops_(...a);
+  savePhoto_(a[0], 'image/jpeg', 'インジケーター上'); savePhoto_(a[1], 'image/jpeg', 'インジケーター下'); return r; }
+function readOrder(pin, ...a) { needAdmin_(pin); const r = readOrder_(...a); savePhoto_(a[0], a[1], '清掃指示書'); return r; }
+function readDouble(pin, ...a) { needAdmin_(pin); const r = readDouble_(...a); savePhoto_(a[0], a[1], 'ダブルメイク'); return r; }
 function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
 function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
 

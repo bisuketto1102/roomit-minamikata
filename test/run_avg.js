@@ -67,3 +67,30 @@ ok(k.check.OUT.n === 2 && k.check.OUT.avg === 6 && k.checkDone === 2 && k.cleanD
 ok(a.team.clean.OUT.n === 3 && Math.abs(a.team.clean.OUT.avg - 25.3) < 0.01, '全体 清掃アウト 3室 ' + a.team.clean.OUT.avg);
 ok(a.perDay.clean === 3 && a.perDay.check === 2, '全体 1人1日あたり 清掃3・チェック2 ' + JSON.stringify(a.perDay));
 const none = A.getStaffAverages_('2000-01-01', '2000-01-02'); ok(none.staff.length === 0, '期間外は空');
+
+console.log('■ 朝の確認用の JSON（?p=instr）');
+{
+  let out = null;
+  env.ContentService = { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType: () => (out = JSON.parse(t)) }) };
+  vm.runInContext('globalThis.__instr = instrJson_', ctx);
+  const j = ctx.__instr(T);
+  ok(j.rooms.length === 179 && j.date === T, '179室');
+  ok(!JSON.stringify(j).includes('上井') && !JSON.stringify(j).includes('川原'), '名前は入らない');
+  const o0 = j.rooms.find(x => x.room === OUT[0]); ok(o0.cleanStarted && o0.code === 'O', '入室した部屋は cleanStarted');
+  ok(j.note && 'allNotes' in j.note || j.note === null, '日次メモ ' + (j.note ? 'あり' : 'なし'));
+}
+
+console.log('■ 紙の写真をドライブに残す');
+{
+  const made = [];
+  const file = n => { const id = 'id' + made.length; const f = { n, getId: () => id, getName: () => f.n, setName: x => { f.n = x; },
+    isTrashed: () => false, getDateCreated: () => new Date(), setTrashed(){} }; made.push(f); return f; };
+  const folder = { getId: () => 'F', isTrashed: () => false, createFile: b => file(b.getName()), getFiles: () => ({ hasNext: () => false }) };
+  env.DriveApp.getFoldersByName = () => ({ hasNext: () => false });
+  env.DriveApp.createFolder = () => folder; env.DriveApp.getFolderById = () => folder;
+  env.DriveApp.getFileById = id => made[Number(String(id).slice(2))];
+  env.Utilities.base64Decode = env.Utilities.base64Decode || (b => Buffer.from(b, 'base64'));
+  env.Utilities.newBlob = env.Utilities.newBlob || ((d, mt, n) => ({ getName: () => n }));
+  vm.runInContext("savePhoto_('eA==', 'image/jpeg', '清掃指示書'); savePhoto_('eQ==', 'application/pdf', 'ダブルメイク'); renamePendingPhotos_('2026-10-27')", ctx);
+  ok(made.length === 2 && /^指示書_2026-10-27_清掃指示書_\w{6}\.jpg$/.test(made[0].n) && /^指示書_2026-10-27_ダブルメイク_\w{6}\.pdf$/.test(made[1].n), '写真 ' + made.map(f => f.n).join(' / '));
+}

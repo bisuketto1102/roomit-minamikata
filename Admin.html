@@ -867,7 +867,7 @@ $('edRoom').addEventListener('keydown', e=>{ if (e.key === 'Enter') loadRoom(); 
 /* ---------- 集計 ---------- */
 function refresh(){
   const d = $('date').value;
-  if (!AVG_KEY) loadAvg();
+  if (!AVG_KEY || AVG_R === 'day') loadAvg();   // その日の分は更新のたびに読み直す（長い期間は期間ボタンで）
   if (!$('shiftLast').dataset.done) { $('shiftLast').dataset.done = 1; adminRun().withSuccessHandler(drawShiftLast).withFailureHandler(()=>{}).getShiftLast(); }
   adminRun().withSuccessHandler(r=>{
     const f = r.floors.map(x=>'<tr><td>'+esc(x.floor)+'</td><td class="n">'+x.out+'</td>'
@@ -1199,7 +1199,7 @@ function toggleAvg(btn){
   if (n) AVG_OPEN[n] = card.classList.contains('open');
 }
 
-$('date').addEventListener('change', ()=>{ $('hdrDate').textContent=$('date').value; refresh(); if (AVG_R === 'day') loadAvg(); });
+$('date').addEventListener('change', ()=>{ $('hdrDate').textContent=$('date').value; refresh(); });
 $('pin').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(); });
 </script>
 </body>
