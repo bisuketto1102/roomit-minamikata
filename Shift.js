@@ -139,7 +139,7 @@ function applyShiftSync(pin) {
     writeShiftSync_(p);
     const o = shortPlan_(p, 'applied', '管理画面から反映');
     saveShiftLast_(o);
-    setupShiftTrigger();
+    setupShiftTrigger_();
     return o;
   });
 }
@@ -174,7 +174,7 @@ function getShiftLast_() {
 }
 
 /** 毎朝4時台に自動で反映する */
-function setupShiftTrigger() {
+function setupShiftTrigger_() {
   const has = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'syncStaffFromShift');
   if (has) return;
   ScriptApp.newTrigger('syncStaffFromShift').timeBased().atHour(4).everyDays(1).inTimezone('Asia/Tokyo').create();
@@ -186,7 +186,7 @@ function removeShiftTrigger_() {
   });
 }
 
-/** 名前の比較用。空白・長音・中点・全角半角の違いは同じ人とみなす */
+/** 名前の比較用。空白・長音・中点・全角半角・英字の大文字小文字の違いは同じ人とみなす */
 function nameKey_(s) {
-  return String(s == null ? '' : s).normalize('NFKC').replace(/[\s　ー－\-・･.]+/g, '');
+  return String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[\s　ー－\-・･.]+/g, '');
 }

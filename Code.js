@@ -271,16 +271,31 @@ const PHOTO_FOLDER = '清掃アプリ_指示書写真_南方';
 function photoFolder_() {
   const id = props_().getProperty('PHOTO_FOLDER_ID');
   if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
-  const it = DriveApp.getFoldersByName(PHOTO_FOLDER);
-  let f = null;
-  while (it.hasNext()) { const x = it.next(); if (!x.isTrashed()) { f = x; break; } }   // ゴミ箱の中の同名は使わない
-  if (!f) f = DriveApp.createFolder(PHOTO_FOLDER);
+  const find = () => {
+    const it = DriveApp.getFoldersByName(PHOTO_FOLDER);
+    while (it.hasNext()) { const x = it.next(); if (!x.isTrashed()) return x; }   // ゴミ箱の中の同名は使わない
+    return null;
+  };
+  let f = find();
+  if (!f) {
+    // 3枚を同時に読むので、初めての日に同じフォルダが2つできないよう、作るときだけ1本ずつにする
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(5000)) throw new Error('写真のフォルダを作れませんでした');
+    try {
+      const pid = props_().getProperty('PHOTO_FOLDER_ID');
+      if (pid) { try { const g = DriveApp.getFolderById(pid); if (!g.isTrashed()) return g; } catch (e) {} }
+      f = find() || DriveApp.createFolder(PHOTO_FOLDER);
+      props_().setProperty('PHOTO_FOLDER_ID', f.getId());
+    } finally { lock.releaseLock(); }
+  }
   props_().setProperty('PHOTO_FOLDER_ID', f.getId());
   return f;
 }
-function savePhoto_(base64, mimeType, kind) {
+function savePhoto_(base64, mimeType, kind, t0) {
   try {
     if (!base64) return;
+    // 読み取りに時間がかかった日は残さない（GASは1回6分まで。読み取りの結果のほうが大事）
+    if (t0 && Date.now() - t0 > 4.5 * 60 * 1000) return;
     const folder = photoFolder_();
     const mt = mimeType || 'image/jpeg', ext = /pdf/.test(mt) ? '.pdf' : /png/.test(mt) ? '.png' : '.jpg';
     const name = '指示書_' + today_() + '_' + kind + '_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'HHmmss') + ext;
@@ -289,15 +304,15 @@ function savePhoto_(base64, mimeType, kind) {
     const c = CacheService.getScriptCache();
     const ids = JSON.parse(c.get('photoPending') || '[]'); ids.push(file.getId());
     c.put('photoPending', JSON.stringify(ids.slice(-20)), 21600);
-    // 30日より前の写真の片付けは1日1回だけ（読み取りを遅くしない）
-    const today = today_();
-    if (props_().getProperty('PHOTO_CLEAN') !== today) {
-      props_().setProperty('PHOTO_CLEAN', today);
-      const limit = Date.now() - 30 * 24 * 3600 * 1000;
-      const files = folder.getFiles();
-      while (files.hasNext()) { const f = files.next(); if (!f.isTrashed() && f.getDateCreated().getTime() < limit) f.setTrashed(true); }
-    }
   } catch (err) { console.warn('写真を保存できませんでした: ' + err); }
+}
+/** 30日より前の写真を片付ける。毎朝5時台の整理から呼ぶ（読み取りを遅くしない） */
+function cleanupPhotos_() {
+  const id = props_().getProperty('PHOTO_FOLDER_ID');
+  if (!id) return;
+  const limit = Date.now() - 30 * 24 * 3600 * 1000;
+  const files = DriveApp.getFolderById(id).getFiles();
+  while (files.hasNext()) { const f = files.next(); if (!f.isTrashed() && f.getDateCreated().getTime() < limit) f.setTrashed(true); }
 }
 /** 保存したとき：まだ保存していない写真の名前を、保存した日付に付け直す */
 function renamePendingPhotos_(date) {
@@ -322,7 +337,11 @@ function instrJson_(date) {
     dmake: r.dmake, twin: r.twin, connect: r.connect, note: r.note,
     cleanStarted: r.clean.state !== 'todo'   // 入室すると D→O になる。紙と違って見えても読み違いではない
   }));
-  return ContentService.createTextOutput(JSON.stringify({ date: date, rooms: rooms, note: getDayNote_(date) }))
+  // 日次メモは紙の追記だけ。作成者（ホテルの人の名前）は出さない
+  const n = getDayNote_(date);
+  const note = n ? { orderCount: n.orderCount, connect: n.connect, allNotes: n.allNotes, dblNote: n.dblNote,
+                     twins: n.twins, connects: n.connects } : null;
+  return ContentService.createTextOutput(JSON.stringify({ date: date, rooms: rooms, note: note }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -441,7 +460,6 @@ function getDayNote_(dateStr) {
 
 
 function saveImport_(date, rooms) {
-  renamePendingPhotos_(date || today_());
   return withLock_(() => {
     const d = date || today_();
     const sh = ss_().getSheetByName(SHEET.LOG);
@@ -3097,6 +3115,7 @@ function dailyMaintenance() {
   archiveOldLogs();
   try { cleanupManual_(); } catch (e) {}
   try { cleanupFloorReports_(); } catch (e) {}
+  try { cleanupPhotos_(); } catch (e) {}
 }
 
 /**
@@ -3132,8 +3151,7 @@ function setupTrigger() {
   });
   ScriptApp.newTrigger('dailyMaintenance')
     .timeBased().atHour(5).everyDays(1).inTimezone('Asia/Tokyo').create();
-  setupShiftTrigger();   // 名簿（シフト表）毎朝4時台。入っていなければ足す
-  Logger.log('毎朝5時台の整理と、4時台の名簿の反映を設置しました');
+  Logger.log('毎朝5時台の整理を設置しました（名簿の4時台は、管理画面で一度シフト表と照らし合わせて反映したときに入る）');
 }
 
 function removeTrigger_() {
@@ -3175,7 +3193,7 @@ function mergeAll(pin, ...a) { needAdmin_(pin); return mergeAll_(...a); }
 function getSaved(pin, ...a) { needAdmin_(pin); return getSaved_(...a); }
 function saveDayNote(pin, ...a) { needAdmin_(pin); return saveDayNote_(...a); }
 function getDayNote(pin, ...a) { needAdmin_(pin); return getDayNote_(...a); }
-function saveImport(pin, ...a) { needAdmin_(pin); return saveImport_(...a); }
+function saveImport(pin, ...a) { needAdmin_(pin); const r = saveImport_(...a); renamePendingPhotos_(a[0] || today_()); return r; }
 function addOrder(pin, ...a) { needAdmin_(pin); return addOrder_(...a); }
 function setOrder(pin, ...a) { needAdmin_(pin); return setOrder_(...a); }
 function getOrders(pin, ...a) { needAdmin_(pin); return getOrders_(...a); }
@@ -3192,11 +3210,11 @@ function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReportG
 function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReportGuarded_(...a); }
 function buildManagerReport(pin, ...a) { needAdmin_(pin); return buildManagerReport_(...a); }
 function getDeclarationText(pin, ...a) { needAdmin_(pin); return getDeclarationText_(...a); }
-function readIndicator(pin, ...a) { needAdmin_(pin); const r = readIndicator_(...a); savePhoto_(a[0], a[1], 'インジケーター'); return r; }
-function readIndicatorCrops(pin, ...a) { needAdmin_(pin); const r = readIndicatorCrops_(...a);
-  savePhoto_(a[0], 'image/jpeg', 'インジケーター上'); savePhoto_(a[1], 'image/jpeg', 'インジケーター下'); return r; }
-function readOrder(pin, ...a) { needAdmin_(pin); const r = readOrder_(...a); savePhoto_(a[0], a[1], '清掃指示書'); return r; }
-function readDouble(pin, ...a) { needAdmin_(pin); const r = readDouble_(...a); savePhoto_(a[0], a[1], 'ダブルメイク'); return r; }
+function readIndicator(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicator_(...a); savePhoto_(a[0], a[1], 'インジケーター', t0); return r; }
+function readIndicatorCrops(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicatorCrops_(...a);
+  savePhoto_(a[0], 'image/jpeg', 'インジケーター上', t0); savePhoto_(a[1], 'image/jpeg', 'インジケーター下', t0); return r; }
+function readOrder(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readOrder_(...a); savePhoto_(a[0], a[1], '清掃指示書', t0); return r; }
+function readDouble(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readDouble_(...a); savePhoto_(a[0], a[1], 'ダブルメイク', t0); return r; }
 function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
 function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
 

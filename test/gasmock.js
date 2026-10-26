@@ -135,7 +135,7 @@ const env = {
   CacheService: { getScriptCache: () => ({
     get: k => (k in cache ? cache[k] : null), put: (k,v) => { cache[k]=v; },
     remove: k => { delete cache[k]; }, removeAll: ks => ks.forEach(k=>delete cache[k]) }) },
-  LockService: { getScriptLock: () => ({ waitLock(){}, releaseLock(){} }) },
+  LockService: { getScriptLock: () => ({ waitLock(){}, tryLock(){ return true; }, releaseLock(){} }) },
   Utilities: {
     sleep(){},
     formatDate(d, tz, fmt){
