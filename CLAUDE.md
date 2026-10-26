@@ -6,11 +6,12 @@
 ## 話し方
 - 日本語、敬語なし、シンプルに。気遣いや将来を匂わせる言い回しは要らない。「お前」は使わない。
 
-## ファイル（GASに上がるのはルートの6ファイルだけ。`.claspignore`）
+## ファイル（GASに上がるのはルートの7ファイルだけ。`.claspignore`）
 | ファイル | 役割 |
 |---|---|
 | `Code.js`（GAS上は Code） | 打刻・保存・集計・日報・責任者業務日報・フロアレポート・特別清掃・保存期間 |
 | `ApaIndicator.js` | 3枚の紙の読み取り（Gemini）・突き合わせ・検算・区分のルール |
+| `Shift.js` | 会社のシフト表 → 名簿（スタッフシート）の自動反映（サウスと同じ仕組み） |
 | `Index.html` | 清掃員画面 |
 | `Admin.html` | 管理画面（`?p=admin`、暗証番号） |
 | `Lang.html` | 7言語（ja/en/vi/ne/my/id/zh） |
@@ -25,6 +26,7 @@ NODE_PATH=/opt/node-tools/node_modules node run_ocr.js
 NODE_PATH=/opt/node-tools/node_modules node ui.js && NODE_PATH=/opt/node-tools/node_modules node ui_admin.js
 NODE_PATH=/opt/node-tools/node_modules node run_outbox.js && NODE_PATH=/opt/node-tools/node_modules node ui_offline.js   # 送り直し
 NODE_PATH=/opt/node-tools/node_modules node run_avg.js   # 清掃員のアベレージ
+NODE_PATH=/opt/node-tools/node_modules node run_shift.js   # シフト表 → 名簿
 ```
 9/29 の正解：検算OK／OUT 110・STAY 61・FULL 8／未清掃3・実質176・除菌176・ロイヤル48・ツイン2・やり残しなし。
 
@@ -67,3 +69,12 @@ NODE_PATH=/opt/node-tools/node_modules node run_avg.js   # 清掃員のアベレ
 
 ## 名前の重なりに注意
 - 管理用の入口 `name(pin)` と中身 `name_` のほかに、二重実行防止の入口が要るときは `nameGuarded_` にする（`buildDailyReportGuarded_`・`buildFloorReportGuarded_`）。同じ名前の関数が2つあると、あとのほうが勝って黙って防止が外れる（10/26 に一度起きた）。
+
+## 名簿（シフト表から自動）
+- シフト表「清掃員シフト ○年」をドライブで名前検索し（見つけたIDは `SHIFT_SS_<年>`）、当月タブ「○年○月」のB列が「南方」の人（または日の欄に「南方」がある人）を在籍、いなくなった人を退職にする。名簿で「応援」と書いた人は触らない（シフトに出てきたら在籍に戻す）。
+- 毎朝4時台に自動（`syncStaffFromShift`）。読めた人が5人未満なら何もしない。退職が在籍の3割（最低3人）を超えるときは自動では止め、管理画面「名簿とシフト表」で確かめて反映する。結果は `SHIFT_LAST`。
+- 名前欄の「（チェック可）」「\n社員 ベトナム」「平日週4」などは `cleanShiftName_` で落とす。比較は `nameKey_`（空白・長音・中点・全角半角を無視）。
+- トリガーは `setupTrigger` を1回実行すると、毎朝5時台の整理と4時台の名簿の両方が入る。管理画面で反映したときも4時台のほうが入る。
+
+## 古い打刻の保管（毎朝5時台）
+- `archiveOldLogs`：KEEP_MONTHS（2か月）より古い行を「打刻ログ_保管」に書き、書けたのを読み返して確かめてから、打刻ログの先頭の古い行だけ消す（前は全部消して書き直していた）。並びが崩れていたら並べ替えてやり直し、それでもだめなら何も書かず・消さずに止める。

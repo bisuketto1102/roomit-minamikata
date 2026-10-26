@@ -95,3 +95,11 @@ for (let i = 0; i < 1300; i++) { const r = new Array(A.NCOL).fill(''); r[0] = '2
 LG.getRange(LG.getLastRow() + 1, 1, 0 || 1, 1); LG.maxRows += 1400;
 LG.getRange(LG.getLastRow() + 1, 1, old.length, A.NCOL).setValues(old);
 const ar = A.archiveOldLogs(); ok(ar.moved === 1300, '保管へ ' + ar.moved + '行 / 残り ' + ar.kept);
+{ const left = LG.getRange(2, 1, LG.getLastRow() - 1, 2).getValues();
+  ok(left.length === 179 && left.every(r => String(r[0]).indexOf('2026-01') < 0), '打刻ログには今日の179室だけ残る（後ろに付いた古い行も並べ替えて移す）');
+  const AR = A.ss_().getSheetByName('打刻ログ_保管'); const av = AR.getRange(2, 1, AR.getLastRow() - 1, 2).getValues();
+  ok(av.length === 1300 && av.every(r => String(r[0]).indexOf('2026-01') === 0), '保管に1300行');
+  const bb = A.getBoard(T); ok(bb.rooms.length === 179, '移したあとも盤面は179室');
+  const free = bb.rooms.find(x => x.kbn === 'STAY' && x.clean.state === 'todo' && !x.dd).room;
+  const rr = A.clockStart(free, '上井 勇輔', 'clean'); ok(rr.room === free && rr.clean.state === 'doing', '移したあとも打刻できる ' + free);
+  ok(A.archiveOldLogs().moved === 0, '2回目は何もしない'); }

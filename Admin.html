@@ -155,6 +155,10 @@
   .pr .pd span em{font-style:normal;color:var(--muted);font-weight:500;margin-right:3px}
   .pr .pd .up{color:#1D7A34}.pr .pd .dn{color:#B35A00}
   .avgempty{color:var(--muted);text-align:center;padding:18px 0;font-size:14px}
+  .gapbar{margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;background:#FDF1EE;border-left:3px solid var(--ng);color:#7A2A1C}
+  .gapbar b{display:block;margin-bottom:2px}
+  .okbar{padding:12px 14px;border-radius:8px;font-size:14px;background:#EDF7EA;border-left:3px solid #4CA83D;color:#2E6A25}
+  .okbar b{display:block;margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -328,6 +332,15 @@
     <h2>区分別</h2>
     <table><thead><tr><th>区分</th><th class="n">室数</th><th class="n">合計</th>
       <th class="n">平均</th></tr></thead><tbody id="sumKbn"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>名簿とシフト表</h2>
+    <p class="hint">会社のシフト表（清掃員シフト ○年）の今月のタブから、B列が「南方」の人（または日の欄に「南方」がある人）を名簿に入れます。シフトから消えた人は「退職」になります。毎朝4時台に自動で反映します（退職が多すぎるときは自動では止めて、ここで確かめてから反映）。</p>
+    <div id="shiftLast"></div>
+    <button class="btn ghost" onclick="previewShift()">シフト表と照らし合わせる</button>
+    <div id="shiftPlan"></div>
+    <button class="btn" id="shiftApply" style="margin-top:12px" onclick="applyShift()" hidden>この内容で名簿に反映する</button>
   </div>
 
   <div class="card">
@@ -855,6 +868,7 @@ $('edRoom').addEventListener('keydown', e=>{ if (e.key === 'Enter') loadRoom(); 
 function refresh(){
   const d = $('date').value;
   if (!AVG_KEY) loadAvg();
+  if (!$('shiftLast').dataset.done) { $('shiftLast').dataset.done = 1; adminRun().withSuccessHandler(drawShiftLast).withFailureHandler(()=>{}).getShiftLast(); }
   adminRun().withSuccessHandler(r=>{
     const f = r.floors.map(x=>'<tr><td>'+esc(x.floor)+'</td><td class="n">'+x.out+'</td>'
       +'<td class="n">'+x.stay+'</td><td class="n">'+x.full+'</td><td class="n">'+x.total+'</td>'
@@ -1055,6 +1069,49 @@ function copyDecl(){
   if (navigator.clipboard && window.isSecureContext)
     navigator.clipboard.writeText(t.value).then(done).catch(fb);
   else fb();
+}
+
+/* ---------- 名簿とシフト表 ---------- */
+function shiftList(title, names){
+  return names.length
+    ? '<p style="margin:10px 0 4px"><b>' + esc(title) + '（' + names.length + '人）</b></p><p style="margin:0;font-size:14px;line-height:1.7">' + names.map(esc).join('、') + '</p>'
+    : '';
+}
+function drawShiftLast(o){
+  if (!o){ $('shiftLast').innerHTML = ''; return; }
+  const word = { applied: '反映しました', nochange: '変更なし', stopped: '止めました', error: '読めませんでした' }[o.status] || '';
+  const bad = o.status === 'stopped' || o.status === 'error';
+  $('shiftLast').innerHTML = '<div class="' + (bad ? 'gapbar' : 'okbar') + '" style="margin:0 0 12px"><b>前回 ' + esc(o.at) + '　' + esc(word) + '</b>'
+    + esc(o.msg && o.msg !== word ? o.msg : '')
+    + (o.status === 'applied' ? '　追加' + o.add.length + '・退職' + o.retire.length + '・在籍に戻す' + o.back.length : '') + '</div>';
+}
+function previewShift(){
+  $('shiftPlan').innerHTML = '<p class="msg" style="color:var(--muted)">シフト表を読んでいます…</p>';
+  $('shiftApply').hidden = true;
+  adminRun().withSuccessHandler(p=>{
+    drawShiftLast(p.last);
+    const n = p.add.length + p.retire.length + p.back.length;
+    $('shiftPlan').innerHTML = '<p class="msg" style="color:var(--muted)">'
+      + '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.file) + '</a> の「' + esc(p.tab) + '」　南方 ' + p.shiftCount + '人 ／ 名簿の在籍 ' + p.active + '人</p>'
+      + (n ? shiftList('名簿に追加', p.add) + shiftList('退職にする', p.retire) + shiftList('在籍に戻す', p.back)
+           : '<p class="msg" style="color:var(--ok)">名簿はシフト表と一致しています。</p>');
+    $('shiftApply').hidden = !n;
+  }).withFailureHandler(e=>{
+    $('shiftPlan').innerHTML = '<div class="gapbar"><b>読めませんでした</b>' + esc(e.message || '') + '</div>';
+  }).previewShiftSync();
+}
+function applyShift(){
+  if (!confirm('この内容で名簿を書き換えます。よろしいですか？')) return;
+  const btn = $('shiftApply');
+  btn.disabled = true; btn.textContent = '反映中…';
+  adminRun().withSuccessHandler(o=>{
+    btn.disabled = false; btn.textContent = 'この内容で名簿に反映する'; btn.hidden = true;
+    $('shiftPlan').innerHTML = '';
+    drawShiftLast(o);
+  }).withFailureHandler(e=>{
+    btn.disabled = false; btn.textContent = 'この内容で名簿に反映する';
+    alert(e.message || '反映できませんでした');
+  }).applyShiftSync();
 }
 
 /* ---------- 清掃員のアベレージ ---------- */

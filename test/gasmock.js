@@ -35,6 +35,14 @@ class Sheet {
   getMaxRows(){ return this.maxRows; } getMaxColumns(){ return this.maxCols; }
   insertRowsAfter(_, n){ this.maxRows += n; } insertColumnsAfter(_, n){ this.maxCols += n; }
   deleteColumns(c, n){ this.maxCols = c - 1; }
+  deleteRows(r, n){   // r 行目から n 行消して、下の行を上へ詰める
+    const cells = {}, fmt = {};
+    for (const k in this.cells){ const [rr, cc] = k.split(',').map(Number);
+      if (rr < r) cells[k] = this.cells[k]; else if (rr >= r + n) cells[(rr - n) + ',' + cc] = this.cells[k]; }
+    for (const k in this.fmt){ const [rr, cc] = k.split(',').map(Number);
+      if (rr < r) fmt[k] = this.fmt[k]; else if (rr >= r + n) fmt[(rr - n) + ',' + cc] = this.fmt[k]; }
+    this.cells = cells; this.fmt = fmt; this.maxRows -= n;
+  }
   setRowHeight(r,h){ this.rowH[r]=h; return this; }
   setRowHeights(r,n,h){ for(let i=0;i<n;i++) this.rowH[r+i]=h; return this; }
   setColumnWidth(c,w){ this.colW[c]=w; return this; }

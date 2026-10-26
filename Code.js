@@ -721,7 +721,6 @@ function readRoomRow_(sh, date, room) {
   return { row: row, v: sh.getRange(row, 1, 1, NCOL).getValues()[0] };
 }
 
-/** 書き換えた行を1回で書き戻し、画面に返す形にする */
 /** 送り直しの操作が、この作業をしている人のものか（空白の違いは同じ人） */
 function samePerson_(a, b) {
   const k = v => String(v || '').replace(/[\s\u3000]+/g, ' ').trim();
@@ -732,6 +731,7 @@ const NOT_MINE_ = '（電波が切れている間に別の人の作業になっ�
 /** 書かずに今の状態を返す（送り直しで1回目がもう入っていたとき） */
 function rowToRoomRev_(date, v) { const o = rowToRoom_(v); o.__rev = getRev(date); return o; }
 
+/** 書き換えた行を1回で書き戻し、画面に返す形にする */
 function writeRoomRow_(sh, date, x) {
   sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
   const out = rowToRoom_(x.v);
@@ -2975,13 +2975,25 @@ function archiveOldLogs() {
   return withLock_(() => {
     const ss = ss_();
     const sh = ss.getSheetByName(SHEET.LOG);
-    const last = sh.getLastRow();
-    if (last < 2) return { moved: 0 };
+    if (sh.getLastRow() < 2) return { moved: 0 };
 
     const limit = keepFrom_();
-    const all = sh.getRange(2, 1, last - 1, NCOL).getValues();
-    const old = all.filter(r => normDate_(r[0]) < limit);
-    if (!old.length) return { moved: 0, limit: limit };
+    const read = () => sh.getRange(2, 1, sh.getLastRow() - 1, NCOL).getValues();
+    // 古い行が先頭にまとまっている行数（まとまっていなければ -1）
+    const headOld = all => {
+      const n = all.filter(r => normDate_(r[0]) < limit).length;
+      return all.slice(0, n).every(r => normDate_(r[0]) < limit) ? n : -1;
+    };
+    let all = read(), n = headOld(all);
+    if (n === 0) return { moved: 0, limit: limit };
+    if (n < 0) {
+      // 並びが崩れていたら、日付順に並べ替えてからやり直す。それでもだめなら何も書かず・消さずに止める
+      sortLog_();
+      all = read(); n = headOld(all);
+      if (n < 0) throw new Error('打刻ログの並びがそろわないので、古い行を保管へ移しませんでした（何も消していません）');
+      if (n === 0) return { moved: 0, limit: limit };
+    }
+    const old = all.slice(0, n);
 
     let ar = ss.getSheetByName(SHEET.ARCHIVE);
     if (!ar) {
@@ -2991,14 +3003,18 @@ function archiveOldLogs() {
     // 新しいシートは26列しかない。列を後ろに足した版のときも同じ。足りない列を足して見出しをそろえる
     if (ar.getMaxColumns() < NCOL) ar.insertColumnsAfter(ar.getMaxColumns(), NCOL - ar.getMaxColumns());
     ar.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
-    ar.getRange(appendAt_(ar, old.length), 1, old.length, NCOL).setValues(old);
-
-    const keep = all.filter(r => normDate_(r[0]) >= limit);
-    sh.getRange(2, 1, last - 1, NCOL).clearContent();
-    if (keep.length) sh.getRange(2, 1, keep.length, NCOL).setValues(keep);
+    const at = appendAt_(ar, old.length);
+    ar.getRange(at, 1, old.length, NCOL).setValues(old);
+    SpreadsheetApp.flush();
+    // 保管に書けたのを確かめてから、打刻ログの先頭の古い行だけ消す
+    // （前は全部消して書き直していた。途中で止まると記録が消えるため）
+    const back = ar.getRange(at, 1, old.length, 2).getValues();
+    const same = back.every((r, i) => normDate_(r[0]) === normDate_(old[i][0]) && String(r[1]) === String(old[i][1]));
+    if (!same) throw new Error('保管シートに書けたか確かめられなかったので、打刻ログは消していません');
+    sh.deleteRows(2, old.length);
 
     CacheService.getScriptCache().removeAll(['dummy']);
-    return { moved: old.length, kept: keep.length, limit: limit };
+    return { moved: old.length, kept: all.length - old.length, limit: limit };
   });
 }
 
@@ -3042,7 +3058,8 @@ function setupTrigger() {
   });
   ScriptApp.newTrigger('dailyMaintenance')
     .timeBased().atHour(5).everyDays(1).inTimezone('Asia/Tokyo').create();
-  Logger.log('毎朝5時台の整理を設置しました');
+  setupShiftTrigger();   // 名簿（シフト表）毎朝4時台。入っていなければ足す
+  Logger.log('毎朝5時台の整理と、4時台の名簿の反映を設置しました');
 }
 
 function removeTrigger_() {

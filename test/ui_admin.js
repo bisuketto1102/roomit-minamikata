@@ -20,7 +20,7 @@ env.UrlFetchApp.fetchAll = reqs => reqs.map(q => {
   const txt = JSON.stringify(data);
   return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: txt }] } }], usageMetadata: { promptTokenCount: 1500, candidatesTokenCount: 300 } }) };
 });
-vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8'), ctx);
+vm.runInContext(fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code.js','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../') + 'ApaIndicator.js','utf8') + '\n' + fs.readFileSync('' + require('path').join(__dirname, '../') + 'Shift.js','utf8'), ctx);
 const call = (n, a) => vm.runInContext(n, ctx)(...a);
 call('initSpreadsheet', []);
 call('ss_', []).getSheetByName('スタッフ').getRange(2,1,2,2).setValues([['上井 勇輔','在籍'],['川原 なつみ','在籍']]);
