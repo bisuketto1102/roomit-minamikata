@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --bg:#F2F4F6; --surface:#FFF; --ink:#1A242E; --muted:#6E7B87; --line:#DCE1E6;
+    /* インジケーターの紙と同じ色にそろえる */
+    --c-O:#E08575;      /* アウト済 */
+    --c-D:#F4C4CB;      /* アウト前 */
+    --c-S:#EDE59A;      /* ステイ 黄色 */
+    --c-V:#7FC47F;      /* 空室 緑 */
+    --c-X:#AAB3BB;      /* 対象外 グレー */
+    --prog:#A8CBEA; --fin:#3F86CE; --chk:#6FB847;
+    --action:#1B5E8C; --warn:#C77A15; --ng:#B5442F;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-size:16px;line-height:1.6;padding-bottom:32px;
+       font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+  button,select,input{font:inherit;color:inherit}
+  button{border:0;background:none;cursor:pointer;padding:0}
+  button:focus-visible,select:focus-visible{outline:3px solid var(--action);outline-offset:2px}
+
+  header{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
+         padding:12px 14px 0;padding-top:calc(12px + env(safe-area-inset-top))}
+  .who{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .who select{font-size:18px;font-weight:600;border:0;background:none;max-width:50%;padding:2px 0}
+  .who select.warn{color:var(--ng);border-bottom:2px solid var(--ng)}
+  .tally{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;text-align:right}
+  .tally b{font-size:21px;font-weight:600;color:var(--ink)}
+  .meter{height:4px;background:var(--line);border-radius:2px;margin-top:9px;overflow:hidden;display:flex}
+  .meter span{display:block;height:100%;width:0;transition:width .35s ease}
+  .meter .m1{background:var(--chk)} .meter .m2{background:var(--fin)}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 12px;padding:9px 0;font-size:11.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+
+  .rack{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:10px}
+  .flr{display:flex;border-bottom:1px solid var(--line)}
+  .flr:last-child{border-bottom:0}
+  .flr .lbl{flex:0 0 44px;display:flex;align-items:center;justify-content:center;
+            font-size:15px;font-weight:700;border-right:1px solid var(--line);font-variant-numeric:tabular-nums}
+  .cells{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 6px;padding:11px 8px}
+  @media(min-width:560px){.cells{grid-template-columns:repeat(6,minmax(0,1fr))}}
+
+  .cell{text-align:left;transition:transform .08s ease}
+  .cell:active{transform:scale(.95)}
+  .cell .rno{display:flex;align-items:center;gap:3px;font-size:17px;font-weight:600;
+             font-variant-numeric:tabular-nums;line-height:1.25;padding:0 2px 2px}
+  .cell .rno .sp{margin-left:auto}
+  .cell .bdg{font-size:9.5px;font-weight:700;border-radius:3px;padding:1px 4px;line-height:1.4;flex:0 0 auto;color:#fff}
+  .b-dd{background:#2F6FBF} .b-ex{background:#2E7D4F} .b-nm{background:#8C959D} .b-fl{background:#9B4F8E}
+
+  .bar{position:relative;display:flex;align-items:center;gap:4px;height:31px;border-radius:5px;
+       padding:0 4px;overflow:hidden}
+  .bar .h{position:absolute;top:0;bottom:0;width:50%;z-index:0}
+  .bar .h.l{left:0} .bar .h.r{right:0}
+  .h.todo{background:transparent} .h.doing{background:var(--prog)} .h.done{background:var(--fin)}
+  .bar.checked .h{background:var(--chk)}
+  .bar::before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0}
+  .bar::after{content:'';position:absolute;inset:0;border-radius:5px;z-index:3;
+              pointer-events:none;border:0 solid transparent}
+  .bar .code,.bar .meta{position:relative;z-index:2}
+  .cell .who{display:block;font-size:11px;line-height:1.3;color:var(--muted);
+             padding:2px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+             min-height:15px}
+  .cell .who.doing{color:var(--action);font-weight:700}
+  .b-w{background:#C77A15} .b-s{background:#B5442F} .b-ec{background:#3E8E3E}
+  .b-sp{background:#E8823A}
+  .bar .code{flex:0 0 auto;min-width:22px;height:21px;background:var(--surface);border-radius:3px;
+             display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;padding:0 3px}
+  .bar .meta{font-size:10.5px;font-variant-numeric:tabular-nums;color:#fff;white-space:nowrap;
+             overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 3px rgba(0,0,0,.4)}
+
+  /* 区分の地色 */
+  .k-OUT .bar{background:var(--c-O)} .k-STAY .bar{background:var(--c-S)}
+  .k-D .bar{background:var(--c-D)}
+  .k-D .meta{color:#7A2E3A;text-shadow:none;font-weight:700}
+  .k-FULL .bar{background:var(--c-S);box-shadow:inset 0 0 0 2px #9B4F8E}
+  .k-V .bar{background:var(--c-V)} .k-NONE .bar{background:var(--c-X)}
+  .k-STAY .meta,.k-FULL .meta,.k-V .meta{color:#3A2A2A;text-shadow:none}
+
+  /* 締切が近い・過ぎた */
+  .cell.soon .bar::after{border-width:3px;border-color:var(--warn)}
+  .cell.late .bar::after{border-width:3px;border-color:var(--ng);animation:bl 1.1s ease-in-out infinite}
+  @keyframes bl{0%,100%{opacity:1}50%{opacity:.2}}
+  @media (prefers-reduced-motion:reduce){.cell.late .bar::after{animation:none}}
+
+  .cell.skip .rno{opacity:.5}
+  .cell.skip .bar{background:var(--c-X)!important}
+  .cell.skip .h{display:none}
+
+  .modebtn{font-size:12.5px;color:var(--action);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
+  .modebtn.on{background:var(--action);color:#fff;border-color:var(--action)}
+  .modebtn.busy{opacity:.5}
+  #refBtn.hit{background:#2E7D4F;color:#fff;border-color:#2E7D4F}
+  body.pick .cell .rno::before{content:'';width:17px;height:17px;border:2px solid var(--line);
+    border-radius:4px;flex:0 0 auto;margin-right:3px;background:#fff}
+  body.pick .cell.sel .rno::before{background:var(--action);border-color:var(--action);
+    box-shadow:inset 0 0 0 2px #fff}
+  body.pick .cell.sel .bar{outline:2px solid var(--action);outline-offset:1px}
+
+  .actionbar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface);
+    border-top:1px solid var(--line);padding:11px 12px calc(11px + env(safe-area-inset-bottom));
+    transform:translateY(120%);transition:transform .2s}
+  .actionbar.on{transform:none}
+  .actionbar .n{font-size:13px;color:var(--muted);margin-bottom:8px}
+  .actionbar .g{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+  .actionbar button{padding:12px 6px;border-radius:8px;font-size:14px;font-weight:600;
+    border:1px solid var(--line);background:var(--surface)}
+  .actionbar button.out{background:var(--c-O);color:#fff;border-color:var(--c-O)}
+  .actionbar button.pri{background:#2F6FBF;color:#fff;border-color:#2F6FBF}
+  .actionbar button.gry{background:#8C959D;color:#fff;border-color:#8C959D}
+  .actionbar input[type=time]{width:100%;border:1px solid var(--line);border-radius:8px;
+    padding:11px;background:var(--bg);margin-top:7px}
+
+  .gate{margin-top:15px;padding:12px 14px;border-radius:8px;font-size:15px;line-height:1.55}
+  .gate b{display:block;font-size:13px;font-weight:700;margin-bottom:3px}
+  .gate.block{background:#FBEDEF;border-left:3px solid #C0768A;color:#8A3A4C}
+  .gate.go{background:#EDF7EA;border-left:3px solid #4CA83D;color:#2E6A25}
+  .gate.due{background:#FDF4E7;border-left:3px solid var(--warn);color:#8A5D14}
+  .gate.skip{background:#F0F2F4;border-left:3px solid #8C959D;color:#4A545E}
+  .gate.note{background:#EAF1FA;border-left:3px solid #2F6FBF;color:#1B4E88}
+
+  .veil{position:fixed;inset:0;background:rgba(10,18,26,.5);opacity:0;pointer-events:none;
+        transition:opacity .2s;z-index:30}
+  .veil.on{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);
+         border-radius:16px 16px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+         transform:translateY(102%);transition:transform .26s cubic-bezier(.32,.72,0,1);
+         max-height:92vh;overflow-y:auto}
+  .sheet.on{transform:translateY(0)}
+  .grab{width:38px;height:4px;background:var(--line);border-radius:2px;margin:-6px auto 14px}
+  .sheet h2{margin:0;font-size:32px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+            display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .sheet h2 .tag{min-width:32px;height:26px;border-radius:5px;background:var(--bg);border:1px solid var(--line);
+                 display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;padding:0 8px}
+  .sheet h2 small{font-size:14px;font-weight:400;color:var(--muted)}
+
+  .site{margin-top:16px;border:1px solid var(--line);border-radius:9px;padding:13px}
+  .site h3{margin:0 0 10px;font-size:13px;font-weight:700;color:var(--muted)}
+  .site .r{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0}
+  .site .r + .r{border-top:1px solid var(--line)}
+  .site .tog{width:52px;height:30px;border-radius:15px;background:var(--line);position:relative;flex:0 0 auto}
+  .site .tog::after{content:'';position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;
+    background:#fff;transition:transform .18s}
+  .site .tog.on{background:#2F6FBF}
+  .site .tog.on.gry{background:#8C959D}
+  .site .tog.on.sp{background:#2E7D4F}
+  .site .ago{display:block;font-size:11.5px;color:var(--muted);margin-top:1px}
+  .site .ago.old{color:var(--warn);font-weight:600}
+  .site .ago.done{color:var(--chk);font-weight:600}
+  .site .tog.on::after{transform:translateX(22px)}
+  .site input[type=text],.site input[type=number],.site select{border:1px solid var(--line);
+    border-radius:6px;padding:9px 10px;background:var(--bg);font-size:15px}
+  .site input[type=number]{width:84px}
+  .site .memo{width:100%;margin-top:8px}
+
+  .steps{margin-top:18px;display:flex;flex-direction:column;gap:12px}
+  .step{border:1px solid var(--line);border-radius:9px;padding:12px 13px}
+  .step .hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+  .step .nm{font-size:15px;font-weight:700}
+  .step .st{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+  .step.done{border-color:var(--fin);background:#F4F9FD}
+  .step.doing{border-color:var(--prog);background:#F7FAFD}
+
+  .btn{padding:15px;border-radius:8px;font-size:16px;font-weight:600;text-align:center;
+       background:var(--action);color:#fff;width:100%;display:block}
+  .btn.fin{background:#2E7D4F}
+  .btn[disabled]{opacity:.4}
+  .btn.ghost{background:none;color:var(--muted);font-weight:400;font-size:14px;padding:9px;margin-top:7px}
+  .btn.close{background:none;color:var(--muted);font-weight:400;font-size:15px;padding:12px;margin-top:14px}
+  .pair{display:flex;gap:8px}
+  .pair .btn{margin-top:0;border:1px solid var(--line);padding:11px 6px;font-size:13.5px}
+  .lock{font-size:13px;color:var(--muted);line-height:1.5}
+
+  .empty{padding:64px 30px;text-align:center;color:var(--muted)}
+  .toast{position:fixed;left:16px;right:16px;bottom:24px;z-index:60;background:var(--ink);color:#fff;
+         padding:13px 16px;border-radius:9px;font-size:15px;opacity:0;transform:translateY(12px);
+         transition:.2s;pointer-events:none}
+  .toast.on{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="who">
+    <select id="staff" aria-label="担当者"></select>
+    <div style="display:flex;align-items:center;gap:9px">
+      <div class="tally"><b id="cDone">0</b> / <span id="cAll">0</span>
+        <span data-t="rooms">室</span><br>
+        <span id="cSub" style="font-size:11.5px"></span></div>
+      <button class="modebtn" id="refBtn" data-t="refresh" onclick="load(true)">更新</button>
+      <button class="modebtn" id="modeBtn" data-t="pick" onclick="togglePick()">選択</button>
+      <button class="modebtn" data-t="collect" onclick="openCollect()">回収</button>
+      <select id="langSel" class="modebtn" onchange="setLang(this.value)" aria-label="Language"></select>
+    </div>
+  </div>
+  <div class="meter"><span class="m1" id="bar1"></span><span class="m2" id="bar2"></span></div>
+  <div class="legend">
+    <span><i style="background:var(--c-D)"></i><span data-t="outBefore">アウト前</span></span>
+    <span><i style="background:var(--c-O)"></i><span data-t="outDone">アウト済</span></span>
+    <span><i style="background:var(--c-S)"></i><span data-t="k_STAY">ステイ</span></span>
+    <span><i style="background:var(--c-S);box-shadow:inset 0 0 0 2px #9B4F8E"></i><span data-t="k_FULL">フルメイク</span></span>
+    <span><i style="background:var(--c-V)"></i><span data-t="k_V">空室</span></span>
+    <span><i style="background:var(--prog)"></i><span data-t="lg_doing">作業中</span></span>
+    <span><i style="background:var(--fin)"></i><span data-t="lg_done">清掃完了</span></span>
+    <span><i style="background:var(--chk)"></i><span data-t="lg_checked">チェック済</span></span>
+  </div>
+</header>
+
+<div id="rack"></div>
+<div id="empty" class="empty" hidden>
+  <p data-t="empty1">今日の指示がまだ入っていません</p>
+  <p data-t="empty2">管理画面から取り込んでください</p>
+</div>
+
+<div class="actionbar" id="abar">
+  <div class="n" id="abarN"></div>
+  <div class="g">
+    <button class="out" data-t="setO" onclick="bulkCode('O')">アウト済にする</button>
+    <button data-t="setD" onclick="bulkCode('D')">アウト前に戻す</button>
+    <button class="pri" data-t="ddOn" onclick="bulkFlag({dd:true})">DD設置</button>
+    <button data-t="ddOff" onclick="bulkFlag({dd:false})">DD解除</button>
+    <button class="gry" data-t="skipOn" onclick="bulkFlag({skip:true})">清掃不要</button>
+    <button data-t="skipOff" onclick="bulkFlag({skip:false})">清掃不要 解除</button>
+  </div>
+  <input type="time" id="bulkTime" aria-label="deadline">
+  <button style="width:100%;margin-top:7px" data-t="setDue" onclick="bulkDue()">締切を入れる</button>
+  <button style="width:100%;margin-top:7px" data-t="stopPick" onclick="togglePick()">選択をやめる</button>
+</div>
+
+<div class="veil" id="veil" onclick="closeSheet()"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h2><span id="dNo"></span><span class="tag" id="dCode" hidden></span><small id="dKbn"></small></h2>
+  <div id="dGate"></div>
+  <div class="site">
+    <h3 data-t="rec">記録</h3>
+    <div class="r"><label data-t="ddSet">DD（ドア前セット）</label><div class="tog" id="tgDD" onclick="flip('dd')"></div></div>
+    <div class="r" id="rSupply"><label data-t="supply">備品</label>
+      <select id="fSupply" onchange="saveField('supply', this.value)">
+        <option value="要">要</option><option value="不要">不要</option></select></div>
+    <div class="r"><label data-t="g_skip">清掃不要</label><div class="tog gry" id="tgSkip" onclick="flip('skip')"></div></div>
+    <div class="r"><label><span data-t="pickup">ゴミ箱回収</span><small id="byPick" class="ago"></small></label>
+      <div class="tog" id="tgPick" onclick="flip('pickup')"></div></div>
+    <div class="r"><label><span data-t="bag">使用済みバッグ回収</span><small id="byBag" class="ago"></small></label>
+      <div class="tog" id="tgBag" onclick="flip('bag')"></div></div>
+    <div class="r"><label data-t="water">水</label>
+      <div><input type="number" id="fWater" min="0" max="20" inputmode="numeric"
+                  onchange="saveField('water', this.value)"> <span data-t="bottles">本</span></div></div>
+    <div class="r"><label data-t="fridge">冷蔵庫（清掃時）</label>
+      <select id="fFridge" onchange="saveField('fridge', this.value)">
+        <option value="">—</option><option>ON</option><option>OFF</option></select></div>
+    <div class="r"><label data-t="fridge2">冷蔵庫（チェック時）</label>
+      <select id="fFridge2" onchange="saveField('fridgeCheck', this.value)">
+        <option value="">—</option><option>ON</option><option>OFF</option></select></div>
+    <input type="text" class="memo" id="fMemo" data-t="memoPh"
+           placeholder="忘れ物・言われたこと など" onchange="saveField('memo', this.value)">
+  </div>
+  <div class="site" id="spBox">
+    <h3 data-t="sp">特別清掃</h3>
+    <div class="r" id="rSp0"><label><span id="lbSp0">—</span>
+      <small id="agSp0" class="ago"></small></label>
+      <div class="tog sp" id="tgAir" onclick="flip('spAircon')"></div></div>
+    <div class="r" id="rSp1"><label><span id="lbSp1">—</span>
+      <small id="agSp1" class="ago"></small></label>
+      <div class="tog sp" id="tgDrain" onclick="flip('spDrain')"></div></div>
+    <div class="r" id="rSp2"><label><span id="lbSp2">—</span>
+      <small id="agSp2" class="ago"></small></label>
+      <div class="tog sp" id="tgTv" onclick="flip('spTv')"></div></div>
+  </div>
+  <div class="steps" id="dSteps"></div>
+  <button class="btn close" data-t="close" onclick="closeSheet()">閉じる</button>
+</div>
+
+<div class="veil" id="cveil" onclick="closeCollect()"></div>
+<div class="sheet" id="csheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h2 style="font-size:22px"><span data-t="collectTitle">回収の確認</span></h2>
+  <p style="font-size:13px;color:var(--muted);margin:4px 0 12px" data-t="collectHint">
+    ゴミ・リネンを回収した部屋です。確かめたら「確認」を押してください。</p>
+  <div id="clist"></div>
+  <button class="btn close" data-t="close" onclick="closeCollect()">閉じる</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<?!= include('Lang') ?>
+<script>
+const TASKS = ['clean', 'check'];
+let BOARD = {rooms:[], staffList:[], counts:{}}, CUR = null, busy = false;
+let PICK = false, SEL = new Set(), PENDING = new Set();
+let REV = -1, LOADING = false;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('on');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),3000); }
+function me(){ return $('staff').value; }
+function nowHM(){ const d=new Date(), p=n=>String(n).padStart(2,'0'); return p(d.getHours())+':'+p(d.getMinutes()); }
+function minsUntil(t){
+  const m = String(t||'').match(/^(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const d = new Date();
+  return (+m[1]*60 + +m[2]) - (d.getHours()*60 + d.getMinutes());
+}
+
+/* ---------- 描画 ---------- */
+/* 特別清掃の枠名はホテルの指定で毎月変わる。名前が空の枠は隠す */
+let SPNAMES = null;
+/**
+ * その部屋の特別清掃を前回いつやったか。詳細を開くたびに読む。
+ *
+ * 月内に1周するローテーションなので、今月すでに済んだ項目は行ごと隠す。
+ * ただし今日やったぶんは押し間違いを直せるよう残しておく。
+ */
+function loadRoomSp(room){
+  [0,1,2].forEach(i => {
+    $('agSp'+i).textContent = '';
+    $('agSp'+i).className = 'ago';
+  });
+  google.script.run.withSuccessHandler(rows=>{
+    if (!CUR || CUR.room !== room) return;
+    const today = todayStr();
+    rows.forEach((x, i) => {
+      const el = $('agSp'+i), row = $('rSp'+i);
+      if (!x.name) { row.style.display = 'none'; return; }
+
+      // 今日やった → 出したまま。取り消せるようにする
+      if (x.last === today) {
+        row.style.display = '';
+        el.textContent = t('spToday');
+        el.className = 'ago done';
+        return;
+      }
+      // 今月すでに済み → 隠す
+      if (x.last) { row.style.display = 'none'; return; }
+
+      row.style.display = '';
+      el.textContent = t('spNone');
+      el.className = 'ago old';
+    });
+
+    // 3つとも隠れたら見出しごと消す
+    const any = [0,1,2].some(i => $('rSp'+i).style.display !== 'none');
+    $('spBox').style.display = any ? '' : 'none';
+  }).withFailureHandler(()=>{}).getRoomSpecial(room);
+}
+
+function todayStr(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+
+function loadSpNames(){
+  google.script.run.withSuccessHandler(c=>{
+    SPNAMES = c.names;
+    [0,1,2].forEach(i=>{
+      const nm = c.names[i] || '';
+      $('lbSp'+i).textContent = nm;
+      $('rSp'+i).style.display = nm ? '' : 'none';
+    });
+  }).withFailureHandler(()=>{}).getSpecialNames(null);
+}
+
+function render(b){
+  const same = BOARD.rooms.length === b.rooms.length
+    && BOARD.rooms.every((r,i) => r.room === b.rooms[i].room)
+    && b.rooms.length && $('c-' + b.rooms[0].room);
+  BOARD = b;
+  syncStaff(b.staffList);
+  updateCounts();
+  $('empty').hidden = b.rooms.length > 0;
+  if (same) b.rooms.forEach(paintRoom); else buildRack(b.rooms);
+}
+
+function syncStaff(list){
+  const sel = $('staff'), sig = list.join('|');
+  const keep = sel.value || localStorage.getItem('staff') || '';
+  const valid = list.indexOf(keep) >= 0;
+  if (sel.dataset.sig !== sig){
+    sel.innerHTML = (valid ? '' : '<option value="">'+esc(t('selName'))+'</option>')
+      + list.map(n=>'<option>'+esc(n)+'</option>').join('');
+    sel.dataset.sig = sig;
+    sel.value = valid ? keep : '';
+  }
+  sel.classList.toggle('warn', !sel.value);
+}
+
+function updateCounts(){
+  const c = BOARD.counts || {};
+  $('cDone').textContent = c.done || 0;
+  $('cAll').textContent  = c.total || 0;
+  $('cSub').textContent  = t('checked') + ' ' + (c.checked||0)
+    + (c.dd ? '　DD ' + c.dd : '');
+  $('bar1').style.width = c.total ? (c.checked/c.total*100)+'%' : '0';
+  $('bar2').style.width = c.total ? ((c.done-c.checked)/c.total*100)+'%' : '0';
+}
+
+function buildRack(rooms){
+  const floors = [];
+  rooms.forEach(r=>{
+    const f = r.floor || 'その他';
+    let g = floors.filter(x=>x.name===f)[0];
+    if (!g) floors.push(g = {name:f, list:[]});
+    g.list.push(r);
+  });
+  floors.sort((a,b)=>parseInt(b.name,10)-parseInt(a.name,10));   // 上の階から
+  $('rack').innerHTML = floors.map(g=>
+    '<div class="rack"><div class="flr"><div class="lbl">'+esc(g.name)+'</div>'
+    + '<div class="cells">' + g.list.map(cell).join('') + '</div></div></div>').join('');
+}
+
+function paintRoom(r){
+  const el = $('c-' + r.room);
+  if (!el) return;
+  if (el.dataset.sig === sigOf(r)) return;
+  el.outerHTML = cell(r);
+}
+function paint(room){
+  const r = BOARD.rooms.filter(x=>x.room===room)[0];
+  if (r) paintRoom(r);
+}
+
+/** Wメイク（寝具を2人分）が要る部屋。新規・継続・常設 */
+function isW(r){ return ['新規','継続','常設'].indexOf(r.dmake) >= 0; }
+
+function sigOf(r){
+  return [r.kbn, r.code, r.clean.state, r.check.state, r.clean.minutes, r.dueIn, r.clean.staff,
+          r.dmake, r.eco?1:0, spLeft(r),
+          r.dd?1:0, r.skip?1:0, r.noMake?1:0, r.fullClean?1:0, hasSp(r)?1:0,
+          gate(r), SEL.has(r.room)?1:0].join('|');
+}
+
+function hasSp(r){ return !!(r.spAircon || r.spDrain || r.spTv); }
+
+/** 今月まだ済んでいない特別清掃の数。今日ONにしたものは済みとして数える */
+const SP_KEYS = ['spAircon', 'spDrain', 'spTv'];
+function spLeft(r){
+  return (r.spTodo || []).filter((p, i) => p && !r[SP_KEYS[i]]).length;
+}
+
+/** 地色のクラス。区分で分ける */
+function colorOf(r){
+  if (r.kbn === 'OUT' && r.code === 'D') return 'k-D';
+  return 'k-' + (r.kbn || 'NONE');
+}
+
+/** 状態: skip / late / soon / '' */
+function gate(r){
+  if (r.skip) return 'skip';
+  if (r.clean.state === 'done') return '';
+  const m = minsUntil(r.dueIn);
+  if (m === null) return '';
+  if (m < 0)  return 'late';
+  if (m <= 30) return 'soon';
+  return '';
+}
+
+function cell(r){
+  const g = gate(r);
+  const done = r.clean.state === 'done';
+  const ckd  = r.check.state === 'done';
+  const m = minsUntil(r.dueIn);
+
+  const meta = r.skip ? t('skipTile')
+    : ckd  ? t('check') + ' ' + r.check.finish
+    : done ? (r.clean.minutes||0) + t('min')
+    : g === 'late' ? t('dueOver', {n: Math.abs(m)})
+    : g === 'soon' ? t('dueLeft', {n: m})
+    : r.dueIn ? t('due', {t: r.dueIn})
+    : (r.kbn === 'OUT' && r.code === 'D' && r.clean.state === 'todo') ? t('outBefore') : '';
+
+  const bdg = (r.dd ? '<span class="bdg b-dd">DD</span>' : '')
+    + (r.noMake ? '<span class="bdg b-nm">NM</span>' : '')
+    + (r.fullClean ? '<span class="bdg b-fl">フル</span>' : '')
+    + (isW(r) ? '<span class="bdg b-w">W</span>' : '')
+    + (r.dmake === '解除' ? '<span class="bdg b-s">S</span>' : '')
+    + (r.eco ? '<span class="bdg b-ec">EC</span>' : '')
+    + (hasSp(r) ? '<span class="bdg b-ex">特</span>' : '')
+    + (spLeft(r) ? '<span class="bdg b-sp">特' + spLeft(r) + '</span>' : '');
+
+  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':''].filter(Boolean).join(' ');
+  const mark = r.kbn === 'OUT' ? (r.code === 'D' ? 'D' : 'O')
+             : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : 'S';
+
+  // 清掃に入った人の名前。入室した時点から出して、退出後・チェック後も残す
+  const who = r.clean.staff ? shortName(r.clean.staff) : '';
+  const whoCls = r.clean.state === 'doing' ? 'who doing' : 'who';
+
+  return '<button id="c-'+esc(r.room)+'" data-sig="'+esc(sigOf(r))+'" class="cell '+cls+'" '
+    + 'onclick="tap(\''+esc(r.room)+'\')">'
+    + '<span class="rno">'+esc(r.room)+bdg+'<span class="sp"></span></span>'
+    + '<span class="bar'+(ckd?' checked':'')+'">'
+    +   '<span class="h l '+r.clean.state+'"></span><span class="h r '+r.check.state+'"></span>'
+    +   '<span class="code">'+mark+'</span><span class="meta">'+esc(meta)+'</span>'
+    + '</span>'
+    + '<span class="'+whoCls+'">'+esc(who)+'</span>'
+    + '</button>';
+}
+
+/** タイルに収まるよう苗字だけにする。区切りが無ければ先頭4文字 */
+function shortName(n){
+  const s = String(n || '').trim();
+  const p = s.split(/[\s　]+/);
+  return p.length > 1 ? p[0] : s.slice(0, 4);
+}
+
+/* ---------- 選択モード ---------- */
+function tap(room){
+  if (!PICK) return openSheet(room);
+  if (SEL.has(room)) SEL.delete(room); else SEL.add(room);
+  paint(room); syncBar();
+}
+function togglePick(){
+  PICK = !PICK; SEL.clear();
+  document.body.classList.toggle('pick', PICK);
+  $('modeBtn').classList.toggle('on', PICK);
+  $('modeBtn').textContent = PICK ? t('picking') : t('pick');
+  BOARD.rooms.forEach(paintRoom); syncBar();
+}
+function syncBar(){
+  $('abar').classList.toggle('on', PICK && SEL.size > 0);
+  $('abarN').textContent = t('selN', {n: SEL.size});
+}
+
+function bulkCode(code){
+  if (!SEL.size || busy) return;
+  // アウトの部屋だけが対象。ステイや空室を選んでいても触らない
+  const rooms = Array.from(SEL).filter(no => {
+    const r = BOARD.rooms.filter(x => x.room === no)[0];
+    return r && r.kbn === 'OUT';
+  });
+  if (!rooms.length) { toast(t('onlyOut')); return; }
+  const word = code === 'O' ? t('outDone') : t('outBefore');
+  if (!confirm(t('cfBulk', {n: rooms.length, w: word}))) return;
+
+  rooms.forEach(no => {
+    const i = BOARD.rooms.map(x => x.room).indexOf(no);
+    if (i >= 0) BOARD.rooms[i].code = code;
+  });
+  recount(); updateCounts(); rooms.forEach(paint);
+
+  busy = true;
+  toast(t('selN', {n: rooms.length}) + '　' + word);
+  try {
+    google.script.run.withSuccessHandler(done).withFailureHandler(ng)
+      .setRoomCode(rooms, code);
+  } catch (err) {
+    ng({ message: t('failed') + '（画面を開き直してください）' });
+  }
+}
+
+function bulkFlag(patch){
+  if (!SEL.size || busy) return;
+  const rooms = Array.from(SEL);
+  const word = ('dd' in patch) ? (patch.dd ? t('ddOn') : t('ddOff'))
+                               : (patch.skip ? t('skipOn') : t('skipOff'));
+  if (!confirm(t('cfBulk', {n: rooms.length, w: word}))) return;
+
+  // 1部屋ずつのときと同じく、清掃不要にしたらDDも立てる（日報の未清掃数＝DD数）
+  const send = Object.assign({}, patch);
+  if (send.skip === true) send.dd = true;
+
+  // 返事を待たずにタイルを先に変える。179室の読み直しを待つと効いていないように見えるため
+  rooms.forEach(room => {
+    const i = BOARD.rooms.map(x=>x.room).indexOf(room);
+    if (i >= 0) Object.keys(send).forEach(k => { BOARD.rooms[i][k] = send[k]; });
+  });
+  recount(); updateCounts(); rooms.forEach(paint);
+
+  busy = true;
+  toast(t('selN', {n: rooms.length}) + '　' + word);
+  try {
+    google.script.run.withSuccessHandler(done).withFailureHandler(ng)
+      .setRoomFlags(rooms, send);
+  } catch (err) {
+    ng({ message: t('failed') + '（画面を開き直してください）' });
+  }
+}
+
+function bulkDue(){
+  if (!SEL.size || busy) return;
+  const tm = $('bulkTime').value;
+  const rooms = Array.from(SEL);
+  if (!confirm(t('cfBulk', {n: rooms.length, w: (tm || '—')}))) return;
+  busy = true;
+  toast(t('setDue'));
+  google.script.run.withSuccessHandler(done).withFailureHandler(ng)
+    .setRoomTime(rooms, 'dueIn', tm);
+}
+
+function done(b){ busy=false; SEL.clear(); REV=b.rev; render(b); syncBar(); }
+function ng(e){ busy=false; toast(e.message || t('failed')); load(); }
+
+/* ---------- 詳細 ---------- */
+function openSheet(room){
+  const r = BOARD.rooms.filter(x=>x.room===room)[0];
+  if (!r) return;
+  fillSheet(r);
+  $('veil').classList.add('on'); $('sheet').classList.add('on');
+}
+function closeSheet(){ CUR=null; $('veil').classList.remove('on'); $('sheet').classList.remove('on'); }
+
+function fillSheet(r){
+  CUR = r;
+  $('dNo').textContent = r.room;
+  $('dCode').hidden = true;
+  $('dKbn').textContent = t('k_' + r.kbn);
+
+  const g = gate(r), m = minsUntil(r.dueIn);
+  let html = '';
+  if (g === 'skip') html += '<div class="gate skip"><b>'+esc(t('g_skip'))+'</b></div>';
+
+  if (r.dueIn && r.clean.state !== 'done'){
+    html += '<div class="gate due"><b>' + esc(t('due', {t: r.dueIn})) + '</b>'
+          + esc(m < 0 ? t('dueOver', {n: Math.abs(m)}) : t('dueLeft', {n: m})) + '</div>';
+  }
+  const ex = [];
+  if (r.fullClean) ex.push(t('full'));
+  if (r.noMake)    ex.push(t('nomake'));
+  if (r.linen)     ex.push(t('linen'));
+  if (r.extend)    ex.push(t('extend'));
+  if (r.pop)       ex.push(t('pop'));
+  if (isW(r))      ex.push(t('wmake') + '（' + r.dmake + '）');
+  if (r.dmake === '解除') ex.push(t('single'));
+  if (r.eco)       ex.push(t('eco'));
+  if (r.lateOut)   ex.push(t('lateout') + ' ' + r.lateOut);
+  if (ex.length || r.note){
+    html += '<div class="gate note"><b>' + esc(t('ord')) + '</b>' + esc(ex.join(' / '))
+          + (r.note ? (ex.length ? '<br>' : '') + esc(r.note) : '') + '</div>';
+  }
+  $('dGate').innerHTML = html;
+
+  $('tgDD').classList.toggle('on', !!r.dd);
+  $('tgSkip').classList.toggle('on', !!r.skip);
+  $('tgPick').classList.toggle('on', !!r.pickup);
+  $('tgBag').classList.toggle('on', !!r.bag);
+  $('byPick').textContent = r.pickup ? (r.pickupBy || '') : '';
+  $('byBag').textContent  = r.bag ? (r.bagBy || '')
+    + (r.collectOk ? '　' + t('checkedBy') + ' ' + r.collectOk : '') : '';
+  $('rSupply').style.display = r.dd ? '' : 'none';
+  $('fSupply').value = r.supply || '要';
+  $('fWater').value  = r.water === '' ? '' : r.water;
+  $('fFridge').value  = r.fridge || '';
+  $('fFridge2').value = r.fridgeCheck || '';
+  $('fMemo').value   = r.memo || '';
+  if (!CUR || CUR.room !== r.room || $('agSp0').dataset.room !== r.room) {
+    $('agSp0').dataset.room = r.room;
+    loadRoomSp(r.room);
+  }
+  $('tgAir').classList.toggle('on', !!r.spAircon);
+  $('tgDrain').classList.toggle('on', !!r.spDrain);
+  $('tgTv').classList.toggle('on', !!r.spTv);
+
+  /*
+   * DD（備品 要）の部屋は清掃の代わりに「DDセット」「DDチェック」。記録の列は清掃・チェックと同じ。
+   * DD（備品 不要）の部屋は何も置かないので作業のボタンを出さない。
+   */
+  if (r.dd && r.supply === '不要') {
+    $('dSteps').innerHTML = '<div class="step"><div class="lock">' + esc(t('ddNoWork')) + '</div></div>';
+    return;
+  }
+  $('dSteps').innerHTML = TASKS.map(k=>{
+    const name = taskLabel(r, k), w = r[k];
+    const info = w.state==='done'  ? esc(w.staff)+'　'+w.start+' 〜 '+w.finish+'　'+w.minutes+t('min')
+               : w.state==='doing' ? esc(w.staff)+'　'+w.start+' 〜' : '';
+    let btn;
+    if (k === 'check' && r.clean.state !== 'done' && w.state === 'todo')
+      btn = '<div class="lock">'+esc(r.dd ? t('afterDdSet') : t('afterClean'))+'</div>';
+    else if (w.state==='todo')
+      btn = '<button class="btn" onclick="act(\'start\',\''+k+'\')">'+esc(t('enter'))+'</button>';
+    else if (w.state==='doing')
+      btn = '<button class="btn fin" onclick="act(\'finish\',\''+k+'\')">'+esc(t('exit'))+'</button>'
+          + '<button class="btn ghost" onclick="act(\'undo\',\''+k+'\')">'+esc(t('undo'))+'</button>';
+    else
+      btn = '<div class="pair">'
+          + '<button class="btn ghost" onclick="act(\'reopen\',\''+k+'\')">'+esc(t('reopen'))+'</button>'
+          + '<button class="btn ghost" onclick="act(\'undo\',\''+k+'\')">'+esc(t('undo'))+'</button></div>';
+    return '<div class="step '+w.state+'"><div class="hd"><span class="nm">'+esc(name)+'</span>'
+         + '<span class="st">'+info+'</span></div>'+btn+'</div>';
+  }).join('');
+}
+
+/** 工程の名前。DDの部屋はDDセット／DDチェック */
+function taskLabel(r, k){
+  if (r && r.dd) return k === 'clean' ? t('ddSetTask') : t('ddCheckTask');
+  return t(k);
+}
+
+/* ---------- 打刻 ---------- */
+function diffMin(from){
+  const m = String(from||'').match(/^(\d{2}):(\d{2})$/);
+  if (!m) return 1;
+  const d = new Date();
+  return Math.max(1, d.getHours()*60 + d.getMinutes() - (+m[1]*60 + +m[2]));
+}
+
+function predict(r, kind, task){
+  const c = JSON.parse(JSON.stringify(r));
+  const t = c[task];
+  if (kind === 'start')  { t.staff = me(); t.start = nowHM(); t.finish=''; t.minutes=null; t.state='doing';
+                           if (task === 'clean' && c.code === 'D') c.code = 'O'; }
+  if (kind === 'finish') { t.finish = nowHM(); t.minutes = diffMin(t.start); t.state='done'; }
+  if (kind === 'reopen') { t.finish = ''; t.minutes = null; t.state='doing'; }
+  if (kind === 'undo')   { c[task] = {staff:'',start:'',finish:'',minutes:null,state:'todo'}; }
+  return c;
+}
+
+function apply(room, obj){
+  if (!obj) return;
+  const i = BOARD.rooms.map(x=>x.room).indexOf(room);
+  if (i < 0) return;
+  if (!obj.spTodo) obj.spTodo = BOARD.rooms[i].spTodo;   // 月の残りは全体読み込みのときだけ届く
+  BOARD.rooms[i] = obj;
+  recount(); updateCounts(); paint(room);
+  if (CUR && CUR.room === room) fillSheet(obj);
+}
+
+function recount(){
+  const t = BOARD.rooms.filter(r => !r.skip && ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
+  BOARD.counts = {
+    total: t.length,
+    done: t.filter(r=>r.clean.state==='done').length,
+    checked: t.filter(r=>r.check.state==='done').length,
+    dd: BOARD.rooms.filter(r=>r.dd).length,
+    skip: BOARD.rooms.filter(r=>r.skip).length
+  };
+}
+
+function act(kind, task){
+  if (!CUR || PENDING.has(CUR.room)) return;
+  if (!me()){ toast(t('pickName')); $('staff').focus(); return; }
+  const nm = taskLabel(CUR, task);
+  if (kind==='undo'   && !confirm(t('cfUndo',   {r: CUR.room, t: nm}))) return;
+  if (kind==='reopen' && !confirm(t('cfReopen', {r: CUR.room, t: nm}))) return;
+
+  const room = CUR.room, staff = me(), before = CUR;
+  holdRoom(room);
+  apply(room, predict(before, kind, task));
+  toast(room+' '+nm+' '+(kind==='start'?t('enter'):kind==='finish'?t('exit'):t('undo')));
+
+  const ok = o => { releaseRoom(room); apply(room, o); REV++; };
+  const bad = e => { releaseRoom(room); apply(room, before);
+                     toast(e.message || t('failed')); };
+  try {
+    const g = google.script.run.withSuccessHandler(ok).withFailureHandler(bad);
+    if (kind==='start')  g.clockStart(room, staff, task);
+    if (kind==='finish') g.clockFinish(room, staff, task);
+    if (kind==='reopen') g.clockReopen(room, task);
+    if (kind==='undo')   g.clockUndo(room, task);
+  } catch (err) {
+    bad({ message: t('failed') + '（画面を開き直してください）' });
+  }
+}
+
+function flip(key){
+  if (!CUR || PENDING.has(CUR.room)) return;
+  // 清掃不要にした部屋はドア前に備品を置くので、DD も一緒に立てる
+  if (key === 'skip' && !CUR.skip && !CUR.dd) {
+    saveField2({ skip: true, dd: true });
+    return;
+  }
+  saveField(key, !CUR[key]);
+}
+
+/**
+ * 送信中の印。通信が失敗したり、呼び出し自体がエラーになっても
+ * 印が残り続けて部屋ごと押せなくなるのを防ぐため、15秒で必ず外す。
+ */
+const PENDING_TIMER = {};
+function holdRoom(room){
+  PENDING.add(room);
+  clearTimeout(PENDING_TIMER[room]);
+  PENDING_TIMER[room] = setTimeout(() => { PENDING.delete(room); }, 15000);
+}
+function releaseRoom(room){
+  PENDING.delete(room);
+  clearTimeout(PENDING_TIMER[room]);
+}
+
+/** サーバー呼び出しを安全に投げる。呼べなかったら元に戻して知らせる */
+function sendFlag(room, patch, before){
+  try {
+    google.script.run
+      .withSuccessHandler(f => { releaseRoom(room); if (f) REV = f.__rev; applyOne_(room, f); })
+      .withFailureHandler(e => { releaseRoom(room);
+        if (before) applyOne_(room, before);
+        toast(e.message || t('failed')); load(); })
+      .setRoomFlag1(room, patch);
+  } catch (err) {
+    // 画面とサーバーの版がずれていると、ここで関数が無いと言われる
+    releaseRoom(room);
+    if (before) applyOne_(room, before);
+    toast(t('failed') + '（画面を開き直してください）');
+  }
+}
+
+/** 複数の項目をまとめて保存する */
+/* ---------- 回収の確認（チェッカー） ---------- */
+function openCollect(){
+  drawCollect();
+  $('cveil').classList.add('on'); $('csheet').classList.add('on');
+}
+function closeCollect(){ $('cveil').classList.remove('on'); $('csheet').classList.remove('on'); }
+
+function drawCollect(){
+  const list = BOARD.rooms.filter(r => r.pickup || r.bag).sort((a,b) => cmpNo(a.room, b.room));
+  const left = list.filter(r => !r.collectOk).length;
+  $('clist').innerHTML = (list.length
+    ? '<div style="font-size:13px;margin-bottom:8px">' + esc(t('collectLeft', {n: left, all: list.length})) + '</div>'
+      + list.map(r => {
+          const what = [];
+          if (r.pickup) what.push(t('trash') + (r.pickupBy ? '　' + r.pickupBy : ''));
+          if (r.bag)    what.push(t('bagShort') + (r.bagBy ? '　' + r.bagBy : ''));
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;'
+            + 'border-bottom:1px solid var(--line)">'
+            + '<b style="font-size:18px;min-width:56px;font-variant-numeric:tabular-nums">' + esc(r.room) + '</b>'
+            + '<div style="flex:1;font-size:12.5px;color:var(--muted);line-height:1.5">'
+            +   what.map(esc).join('<br>')
+            +   (r.collectOk ? '<br><span style="color:var(--chk);font-weight:700">'
+                  + esc(t('checkedBy')) + ' ' + esc(r.collectOk) + '</span>' : '')
+            + '</div>'
+            + (r.collectOk
+                ? '<button class="modebtn" onclick="checkCollect(\'' + esc(r.room) + '\', false)">'
+                  + esc(t('cancelBtn')) + '</button>'
+                : '<button class="modebtn on" onclick="checkCollect(\'' + esc(r.room) + '\', true)">'
+                  + esc(t('confirmBtn')) + '</button>')
+            + '</div>';
+        }).join('')
+    : '<p style="color:var(--muted)">' + esc(t('noCollect')) + '</p>');
+}
+
+function cmpNo(a, b){ return (parseInt(a,10)||0) - (parseInt(b,10)||0); }
+
+function checkCollect(room, ok){
+  if (!me()){ toast(t('pickName')); return; }
+  const i = BOARD.rooms.map(x => x.room).indexOf(room);
+  const before = i >= 0 ? JSON.parse(JSON.stringify(BOARD.rooms[i])) : null;
+  if (i >= 0) BOARD.rooms[i].collectOk = ok ? me() + ' ' + nowHM() : '';
+  drawCollect();
+  try {
+    google.script.run
+      .withSuccessHandler(f => { if (f) { REV = f.__rev; applyOne_(room, f); } drawCollect(); })
+      .withFailureHandler(e => { if (before) applyOne_(room, before); drawCollect();
+        toast(e.message || t('failed')); })
+      .setCollectCheck(room, me(), ok);
+  } catch (err) {
+    if (before) applyOne_(room, before); drawCollect();
+    toast(t('failed') + '（画面を開き直してください）');
+  }
+}
+
+function saveField2(patch){
+  if (!CUR) return;
+  const room = CUR.room;
+  const before = JSON.parse(JSON.stringify(CUR));
+  holdRoom(room);
+  const i = BOARD.rooms.map(x=>x.room).indexOf(room);
+  if (i >= 0){ Object.keys(patch).forEach(k => { BOARD.rooms[i][k] = patch[k]; }); CUR = BOARD.rooms[i]; }
+  try { recount(); updateCounts(); paint(room); fillSheet(CUR); } catch (e) {}
+  sendFlag(room, patch, before);
+}
+
+function saveField(key, val){
+  if (!CUR) return;
+  const room = CUR.room, patch = {};
+  patch[key] = val;
+  // 回収は押した人と時刻を残す
+  if (key === 'pickup' || key === 'bag') {
+    if (val && !me()) { toast(t('pickName')); $('staff').focus(); return; }
+    patch.__by = me();
+    if (val) CUR[key + 'By'] = me() + ' ' + nowHM();
+  }
+  const before = JSON.parse(JSON.stringify(CUR));
+  holdRoom(room);
+  const i = BOARD.rooms.map(x=>x.room).indexOf(room);
+  if (i >= 0){ BOARD.rooms[i][key] = val; CUR = BOARD.rooms[i]; }
+  try { recount(); updateCounts(); paint(room); fillSheet(CUR); } catch (e) {}
+
+  // 成功しても179室ぶん作り直さない。この部屋の最新値だけ確定させる
+  sendFlag(room, patch, before);
+}
+
+/** 1部屋ぶんの最新状態を、全体を作り直さずに反映する */
+function applyOne_(room, f){
+  if (!f) return;
+  const i = BOARD.rooms.map(x=>x.room).indexOf(room);
+  if (i >= 0 && !f.spTodo) f.spTodo = BOARD.rooms[i].spTodo;   // 月の残りは全体読み込みのときだけ届く
+  if (i >= 0) BOARD.rooms[i] = f;
+  recount(); updateCounts(); paint(room);
+  if (CUR && CUR.room === room) fillSheet(f);
+}
+
+/* ---------- 読み込み ---------- */
+function load(manual){
+  if (LOADING) return;
+  LOADING = true;
+  if (manual) $('refBtn').classList.add('busy');
+  google.script.run
+    .withSuccessHandler(b=>{
+      LOADING=false; $('refBtn').classList.remove('busy');
+      REV = b.rev; render(b);
+      if (manual){ $('refBtn').classList.add('hit');
+        setTimeout(()=>$('refBtn').classList.remove('hit'), 700); }
+    })
+    .withFailureHandler(e=>{
+      LOADING=false; $('refBtn').classList.remove('busy');
+      toast(e.message || t('failed'));
+    })
+    .getBoard(null);
+}
+
+function checkRev(){
+  if (document.hidden || LOADING || PENDING.size) return;
+  google.script.run.withSuccessHandler(r=>{ if (r !== REV) load(); })
+    .withFailureHandler(()=>{}).getRev(null);
+}
+
+applyLang();
+loadSpNames();
+$('langSel').innerHTML = Object.keys(LANG_NAMES)
+  .map(k => '<option value="'+k+'"'+(k===LANG?' selected':'')+'>'+LANG_NAMES[k]+'</option>').join('');
+
+$('staff').addEventListener('change', e=>{
+  if (e.target.value){ localStorage.setItem('staff', e.target.value); e.target.classList.remove('warn'); }
+});
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !PENDING.size) load(); });
+window.addEventListener('focus', checkRev);
+setInterval(checkRev, 7000);
+setInterval(()=>{ if(!document.hidden && !PENDING.size && !busy) load(); }, 120000);
+setInterval(()=>{ if(!document.hidden) BOARD.rooms.forEach(paintRoom); }, 20000);
+load();
+</script>
+</body>
+</html>

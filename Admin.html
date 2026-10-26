@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#F2F4F6;--surface:#FFF;--ink:#1A242E;--muted:#6E7B87;--line:#DCE1E6;
+        --action:#1B5E8C;--ok:#2E7D4F;--ng:#B5442F;--warn:#B57A14}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.6;
+       padding-bottom:48px;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{border:0;background:none;cursor:pointer}
+  header{background:var(--surface);border-bottom:1px solid var(--line);
+         padding:16px;padding-top:calc(16px + env(safe-area-inset-top))}
+  header h1{margin:0;font-size:19px;font-weight:600}
+  header p{margin:2px 0 0;font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .wrap{padding:16px;max-width:900px;margin:0 auto}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}
+  .card h2{margin:0 0 4px;font-size:16px;font-weight:600}
+  .card p.hint{margin:0 0 14px;font-size:13.5px;color:var(--muted)}
+  .btn{display:block;width:100%;padding:15px;border-radius:9px;background:var(--action);
+       color:#fff;font-size:16px;font-weight:600;text-align:center}
+  .btn.save{background:var(--ok)}
+  .btn.ghost{background:none;color:var(--muted);font-weight:400;border:1px solid var(--line)}
+  .btn[disabled]{opacity:.45;cursor:default}
+  .btn + .btn{margin-top:9px}
+  input[type=file]{display:none}
+  input[type=date]{border:1px solid var(--line);border-radius:7px;padding:10px 12px;
+                   background:var(--surface);width:100%}
+
+  .slots{display:flex;gap:10px;margin-top:12px}
+  .slot{flex:1;border:2px dashed var(--line);border-radius:9px;padding:12px;text-align:center;
+        cursor:pointer;background:var(--bg)}
+  .slot.on{border-style:solid;border-color:var(--ok);background:#F3F9F3}
+  .slot b{display:block;font-size:13px;margin-bottom:4px}
+  .slot small{font-size:11.5px;color:var(--muted);display:block;line-height:1.4}
+  .slot img{width:100%;max-height:110px;object-fit:cover;border-radius:5px;margin-top:8px}
+
+  .msg{margin:12px 0 0;font-size:14px;white-space:pre-wrap}
+  .bar{padding:12px 14px;border-radius:8px;font-size:14px;margin-top:12px}
+  .bar.ok{background:#EDF7EA;border-left:3px solid var(--ok);color:#2E6A25}
+  .bar.ng{background:#FDE7EA;border-left:3px solid var(--ng);color:#8A2B1C}
+  .bar.wa{background:#FDF6E7;border-left:3px solid var(--warn);color:#7A5410}
+  .bar b{display:block;margin-bottom:2px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:0 5px 7px;
+     border-bottom:1px solid var(--line)}
+  td{padding:7px 5px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  td.n,th.n{text-align:right}
+  tr.total td{font-weight:700;border-bottom:0}
+  tr.u td{background:#FDE7EA}
+
+  .rc{border:1px solid var(--line);border-radius:9px;padding:11px 12px;margin-bottom:9px;background:var(--surface)}
+  .rc.unsure{border-color:#E39AA4;background:#FEF7F8}
+  .rc .top{display:flex;gap:7px;align-items:center}
+  .rc .top .r{width:76px;font-weight:600;font-size:17px;font-variant-numeric:tabular-nums;
+              border:1px solid var(--line);border-radius:5px;padding:7px;background:var(--bg)}
+  .rc .top select,.rc .top input.t{border:1px solid var(--line);border-radius:5px;padding:7px;
+                                   background:var(--bg);font-size:15px}
+  .rc .top input.t{width:92px}
+  .rc .flagline{font-size:12px;color:#A33A48;margin-top:6px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{border:1px solid var(--line);border-radius:15px;padding:6px 11px;font-size:13px;
+        background:var(--surface);color:var(--muted)}
+  .chip.on{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+  .toolbar{display:flex;align-items:center;gap:10px;margin:0 0 11px;font-size:14px}
+  .toolbar label{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .toolbar input[type=checkbox]{width:19px;height:19px}
+
+  #decl{width:100%;min-height:200px;border:1px solid var(--line);border-radius:8px;padding:11px;
+        background:var(--bg);font-size:14px;line-height:1.7;white-space:pre;resize:vertical}
+  .stalerow{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;border:1px solid #E39AA4;
+            background:#FEF7F8;border-radius:8px;padding:10px 12px;margin-bottom:8px}
+  .stalerow b{font-size:18px;font-variant-numeric:tabular-nums}
+  .stalerow .tk{font-size:12.5px;font-weight:700;color:#A33A48}
+  .stalerow .mi{font-size:12.5px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid #ccc;border-top-color:#333;
+        border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:8px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .ord{font-size:13.5px}
+  .ord div{padding:5px 0;border-bottom:1px solid var(--line)}
+  .ord b{color:var(--muted);font-size:11.5px;display:inline-block;min-width:112px}
+</style>
+</head>
+<body>
+
+<div id="gate" class="wrap" style="padding-top:70px">
+  <div class="card">
+    <h2>管理画面</h2>
+    <p class="hint">暗証番号を入力してください</p>
+    <input id="pin" type="tel" inputmode="numeric" autocomplete="off"
+           style="width:100%;padding:14px;border:1px solid var(--line);border-radius:8px;
+                  font-size:22px;letter-spacing:.3em;text-align:center;background:var(--bg)">
+    <div class="msg" id="pinMsg"></div>
+    <button class="btn" style="margin-top:14px" onclick="unlock()">開く</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+<header><h1>客室清掃 管理　アパ南方</h1><p id="hdrDate"></p></header>
+<div class="wrap">
+
+  <div class="card">
+    <h2>2枚の紙を取り込む</h2>
+    <p class="hint">3枚とも選んでから「読み取る」。写真でもPDFでも読めます。1分半ほどかかります。
+      ダブルメイク指示書は無くても進められます。</p>
+    <input type="date" id="date">
+    <div class="slots">
+      <label class="slot" id="s1" for="f1"><b>① インジケーター</b>
+        <small>部屋の状態コードの表</small><div id="p1"></div></label>
+      <label class="slot" id="s2" for="f2"><b>② 清掃指示書</b>
+        <small>フル清掃・アーリーIN など</small><div id="p2"></div></label>
+      <label class="slot" id="s3" for="f3"><b>③ ダブルメイク指示書</b>
+        <small>色分けのマス目</small><div id="p3"></div></label>
+    </div>
+    <input type="file" id="f1" accept="image/*,application/pdf">
+    <input type="file" id="f2" accept="image/*,application/pdf">
+    <input type="file" id="f3" accept="image/*,application/pdf">
+    <button class="btn" id="go" style="margin-top:12px" disabled onclick="read()">読み取る</button>
+    <button class="btn ghost" onclick="loadSaved()">保存済みを読み込んで直す</button>
+    <div class="msg" id="ocrMsg"></div>
+    <div id="bars"></div>
+  </div>
+
+  <div class="card" id="ordCard" hidden>
+    <h2>清掃指示書から読んだ内容</h2>
+    <div class="ord" id="ord"></div>
+  </div>
+
+  <div class="card" id="editCard" hidden>
+    <h2>確認して保存</h2>
+    <p class="hint" id="editHint"></p>
+    <div class="toolbar">
+      <input type="search" id="findRoom" inputmode="numeric" placeholder="部屋番号で探す"
+             oninput="drawRows()" style="border:1px solid var(--line);border-radius:7px;
+             padding:8px 10px;background:var(--bg);width:150px">
+      <label><input type="checkbox" id="onlyUnsure" onchange="drawRows()">要確認だけ表示</label>
+      <span id="unsureCount" style="color:#A33A48"></span>
+    </div>
+    <div id="rows"></div>
+    <button class="btn save" onclick="save()">この内容で保存</button>
+    <div class="msg" id="saveMsg"></div>
+  </div>
+
+  <div class="card" id="staleCard" hidden>
+    <h2>退出ボタンの押し忘れ</h2>
+    <p class="hint">入室から60分以上たっても退出していない工程です。</p>
+    <div id="staleList"></div>
+  </div>
+
+  <div class="card">
+    <h2>ホテルへの報告</h2>
+    <p class="hint">上の日付の実績から作ります。コピーしてそのまま貼れます。</p>
+    <button class="btn" onclick="makeDecl()">報告文を作る</button>
+    <textarea id="decl" style="margin-top:11px;display:none" readonly></textarea>
+    <button class="btn ghost" id="copyBtn" style="display:none" onclick="copyDecl()">コピーする</button>
+    <button class="btn ghost" onclick="makeDaily()">日報シートを作る（客室清掃日報＋責任者業務日報）</button>
+    <div class="msg" id="dailyMsg"></div>
+
+    <button class="btn ghost" onclick="makeFloor()">フロアレポートを作る</button>
+    <div class="msg" id="frMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>階別の集計</h2>
+    <table><thead><tr><th>階</th><th class="n">アウト</th><th class="n">ステイ</th>
+      <th class="n">フル</th><th class="n">計</th><th class="n">清掃済</th>
+      <th class="n">DD</th><th class="n">水</th></tr></thead>
+      <tbody id="repBody"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>特別清掃の進み具合</h2>
+    <p class="hint">月内に全室を1周します。残数がマイナスのあいだは未実施の部屋が残っています。
+      3つの枠はホテルの指定に合わせて毎月変わるので、月ごとに設定してください。</p>
+    <div id="spConf" style="border:1px solid var(--line);border-radius:8px;padding:12px;
+         margin-bottom:14px;background:var(--bg)"></div>
+    <div id="special"></div>
+    <button class="btn ghost" style="margin-top:12px" onclick="makeSpecial()">
+      特別清掃シートを作る</button>
+    <p class="hint" style="margin:8px 0 0">
+      シートの日にちのマスは直接書き換えられます。変更はすぐ打刻ログに反映されます。
+      空欄にすればその月の実施を取り消せます。</p>
+    <div class="msg" id="spSheetMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>清掃員別</h2>
+    <p class="hint">清掃とチェックを分けて集計しています。</p>
+    <table><thead><tr><th>清掃員 / 作業</th><th class="n">室数</th><th class="n">合計</th>
+      <th class="n">平均</th></tr></thead><tbody id="sumStaff"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>区分別</h2>
+    <table><thead><tr><th>区分</th><th class="n">室数</th><th class="n">合計</th>
+      <th class="n">平均</th></tr></thead><tbody id="sumKbn"></tbody></table>
+  </div>
+
+</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const CODES = ['','V','SD','D','O','I','C','P','X','A'];
+const CODENAME = {'':'（未設定）',V:'V 空室',SD:'SD 滞在',D:'D 出発予定',O:'O 出済',
+                  I:'I 仮チェックイン',C:'C 清掃',P:'P 点検',X:'X 故障',A:'A ブロック'};
+const EXTRA = [['fullClean','フル清掃'],['eco','エコ清掃'],['noMake','ノーメイク'],
+               ['linen','リネン交換'],['extend','延泊'],['pop','POP回収']];
+const KBNNAME = {OUT:'アウト',STAY:'ステイ',FULL:'フルメイク',V:'空室',NONE:'対象外'};
+let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '';
+
+/** 「2026/9/29」「2026-09-29」などを yyyy-MM-dd にそろえる */
+function normYmd(v){
+  const m = String(v || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return '';
+  const p = n => ('0' + n).slice(-2);
+  return m[1] + '-' + p(m[2]) + '-' + p(m[3]);
+}
+
+function todayStr(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+
+function unlock(){
+  google.script.run.withSuccessHandler(ok=>{
+    if (!ok){ $('pinMsg').textContent = '暗証番号が違います'; return; }
+    $('gate').hidden = true; $('app').hidden = false;
+    $('date').value = todayStr(); $('hdrDate').textContent = todayStr();
+    refresh();
+  }).checkAdminPin($('pin').value);
+}
+
+/* ---------- 写真 ---------- */
+[['f1','s1','p1'],['f2','s2','p2'],['f3','s3','p3']].forEach(([f,s,p])=>{
+  $(f).addEventListener('change', async e=>{
+    const file = e.target.files[0]; e.target.value='';
+    if (!file) return;
+    try {
+      if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+        // PDFは縮めずにそのまま送る。スキャンなので折れ目も影も無い
+        if (file.size > 15 * 1024 * 1024) { alert('PDFが大きすぎます（15MBまで）'); return; }
+        IMG[f] = await readB64(file);
+        MIME[f] = 'application/pdf';
+        $(p).innerHTML = '<div style="margin-top:8px;padding:14px 6px;border-radius:5px;'
+          + 'background:#FDE7EA;color:#8A2B1C;font-weight:700;font-size:13px">PDF<br>'
+          + '<span style="font-weight:400;font-size:11px">'+esc(file.name)+'</span></div>';
+      } else {
+        IMG[f] = await shrink(file, 2600);
+        MIME[f] = 'image/jpeg';
+        $(p).innerHTML = '<img src="data:image/jpeg;base64,'+IMG[f]+'">';
+      }
+      $(s).classList.add('on');
+    } catch(err){ alert('ファイルを開けませんでした'); }
+    $('go').disabled = !(IMG.f1 && IMG.f2);
+  });
+});
+
+const MIME = {};
+
+/** ファイルをそのまま base64 にする（PDF用） */
+function readB64(file){
+  return new Promise((res, rej)=>{
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(',')[1]);
+    fr.onerror = () => rej(new Error('no'));
+    fr.readAsDataURL(file);
+  });
+}
+
+function shrink(file, max){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const s = Math.min(1, max/Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      res(c.toDataURL('image/jpeg', 0.92).split(',')[1]);
+    };
+    img.onerror = ()=>rej(new Error('no'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function read(){
+  $('go').disabled = true; $('bars').innerHTML='';
+  say('インジケーターを読み取り中…（2通りの方法で読むので1分ほど）');
+  google.script.run.withSuccessHandler(ind=>{
+    say('清掃指示書を読み取り中…');
+    google.script.run.withSuccessHandler(ord=>{
+      if (!IMG.f3){ finish(ind, ord, null); return; }
+      say('ダブルメイク指示書を読み取り中…');
+      google.script.run
+        .withSuccessHandler(d => finish(ind, ord, d))
+        .withFailureHandler(e => {
+          // 3枚目が読めなくても、2枚ぶんで先に進める
+          $('bars').innerHTML = '<div class="bar wa">ダブルメイク指示書は読めませんでした。'
+            + esc(e.message || '') + '</div>';
+          finish(ind, ord, null);
+        })
+        .readDouble(IMG.f3, MIME.f3 || 'image/jpeg');
+    }).withFailureHandler(fail).readOrder(IMG.f2, MIME.f2 || 'image/jpeg');
+  }).withFailureHandler(fail).readIndicator(IMG.f1, MIME.f1 || 'image/jpeg');
+}
+
+function finish(ind, ord, dbl){
+  say('突き合わせ中…');
+  google.script.run.withSuccessHandler(show).withFailureHandler(fail)
+    .mergeAll(ind, ord, dbl);
+}
+
+function say(t){ $('ocrMsg').innerHTML = '<span class="spin"></span>'+esc(t); }
+function fail(e){ $('go').disabled=false; $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
+
+function show(res){
+  $('go').disabled = false;
+  ROWS = res.rooms; ORDER = res.order; DBL = res.dbl || null;
+  const v = res.verify;
+
+  $('ocrMsg').textContent = ROWS.length+' 室を読み取り（清掃対象 '+v.cleanTarget+' 室）。';
+  let bars = '<div class="bar '+(v.ok?'ok':'ng')+'"><b>'+(v.ok?'検算OK':'検算NG')+'</b>'
+           + esc(v.message)+'</div>';
+  (v.warn||[]).forEach(w=>{ bars += '<div class="bar wa">'+esc(w)+'</div>'; });
+
+  // 指示書の日付と、保存先の日付が違えば止める
+  const od = normYmd(ORDER && ORDER.date);
+  DATE_GAP = (od && od !== $('date').value) ? od : '';
+  if (DATE_GAP) {
+    bars = '<div class="bar ng"><b>日付が違います</b>清掃指示書は ' + esc(od)
+         + ' ですが、保存先は ' + esc($('date').value) + ' です。上の日付を直してから保存してください。</div>'
+         + bars;
+  }
+  $('bars').innerHTML = bars;
+
+  const o = ORDER;
+  const line = (l, val) => val && val.length
+    ? '<div><b>'+l+'</b>'+esc(Array.isArray(val)?val.join('、'):val)+'</div>' : '';
+  $('ord').innerHTML = line('日付', o.date) + line('作成者', o.maker)
+    + line('清掃指示数', String(o.orderCount||''))
+    + line('階別', o.planned.map(p=>p.floor+':'+p.rooms))
+    + line('フル清掃', o.fullClean)
+    + line('ノーメイク', o.noMake.map(x=>x.room+(x.need?'('+x.need+')':'')))
+    + line('リネン交換依頼', o.linenRequest)
+    + line('アーリーIN', o.earlyIn.map(x=>x.time+'→'+x.rooms.join('・')))
+    + line('レイトアウト', o.lateOut.map(x=>x.time+'→'+x.rooms.join('・')))
+    + line('ルームチェンジ', o.roomChange.map(x=>x.from+'→'+x.to))
+    + line('POP回収', o.popCollect)
+    + line('コネクト', o.connect.map(x=>x.floor+x.state))
+    + line('延泊', o.extend)
+    + line('特記', o.notes.map(x=>x.room+'：'+x.text))
+    + line('全室', o.allNotes);
+
+  const d = res.dbl;
+  if (d){
+    const byKind = {};
+    d.rooms.forEach(x => { (byKind[x.kind] = byKind[x.kind] || []).push(x.room); });
+    $('ord').innerHTML += '<div style="margin-top:10px"><b style="min-width:0">ダブルメイク指示書</b></div>'
+      + Object.keys(byKind).map(k =>
+          '<div><b>'+esc(k)+'</b>'+byKind[k].length+'室：'+esc(byKind[k].join('、'))+'</div>').join('')
+      + line('ツイン', d.twins.map(p=>p.join('・')))
+      + line('コネクト', d.connects.map(p=>p.join('・')))
+      + line('注意書き', d.note);
+  }
+  $('ordCard').hidden = false;
+
+  $('editHint').textContent = $('date').value+' の指示として保存します。打刻の記録は消えません。';
+  $('editCard').hidden = false;
+  drawRows();
+}
+
+/* ---------- 保存済みを読み込んで直す ---------- */
+function loadSaved(){
+  say('読み込み中…');
+  google.script.run
+    .withSuccessHandler(res=>{
+      if (!res.rooms.length){
+        $('ocrMsg').textContent = res.date + ' の指示はまだ保存されていません。';
+        return;
+      }
+      ROWS = res.rooms; ORDER = null; DBL = null;
+      $('bars').innerHTML = ''; $('ordCard').hidden = true;
+      $('ocrMsg').textContent = res.date + ' の保存済み ' + ROWS.length + ' 室を読み込みました。'
+        + '直して保存し直せます。打刻の記録は消えません。';
+      $('editHint').textContent = res.date + ' の指示を上書き保存します。';
+      $('onlyUnsure').checked = false;
+      $('editCard').hidden = false;
+      drawRows();
+      $('editCard').scrollIntoView({behavior:'smooth', block:'start'});
+    })
+    .withFailureHandler(e=>{ $('ocrMsg').textContent = e.message || '読み込めませんでした'; })
+    .getSaved($('date').value);
+}
+
+/* ---------- 確認・編集 ---------- */
+function drawRows(){
+  const only = $('onlyUnsure').checked;
+  const q = ($('findRoom').value || '').replace(/[^0-9]/g,'');
+  const list = ROWS.map((r,i)=>({r,i}))
+    .filter(x => !only || needCheck(x.r))
+    .filter(x => !q || String(x.r.room).indexOf(q) >= 0);
+  const left = ROWS.filter(needCheck).length;
+  $('unsureCount').textContent = left ? '要確認 あと ' + left + ' 室' : '要確認なし';
+
+  $('rows').innerHTML = list.map(({r,i})=>
+    '<div class="rc'+(needCheck(r)?' unsure':'')+'">'
+    + '<div class="top">'
+    +   '<input class="r" value="'+esc(r.room)+'" oninput="upd('+i+',\'room\',this.value)">'
+    +   '<select onchange="setCode('+i+',this.value)">'
+    +     CODES.map(c=>'<option value="'+c+'"'+((r.code||'')===c?' selected':'')+'>'
+    +       CODENAME[c]+'</option>').join('')
+    +   '</select>'
+    +   '<input class="t" type="time" value="'+esc(r.dueIn||'')+'" '
+    +     'onchange="upd('+i+',\'dueIn\',this.value)" aria-label="締切">'
+    + '</div>'
+    + (r.alt ? '<div class="flagline"><b>2回の読み取りが違う</b>　1回目 '+esc(r.code||'空')
+        +'／2回目 '+esc(r.alt)+'　どちらか選んでください</div>' : '')
+    + (r.ruled ? '<div class="flagline" style="color:#2E6A25"><b>'+esc(r.ruled)+'で確定</b>　確認不要</div>' : '')
+    + ((r.lateOut && String(r.lateOut) >= '19:00')
+        ? '<div class="flagline" style="color:var(--muted)"><b>翌日回し</b>　'
+          + esc(r.lateOut) + 'アウトなので今日の清掃の対象外</div>' : '')
+    + (r.extendStay ? '<div class="flagline"><b>延泊予定</b>　インジケーターは'
+        + esc(r.boxCode||'D') + 'ですがステイにしています。荷物が無くアウト清掃なら区分を直してください</div>' : '')
+    + (r.hand ? '<div class="flagline"><b>手書きあり</b>　写真と見比べて区分を確かめてください</div>' : '')
+    + (!r.alt && !r.hand && !r.confirmed && r.flagNote
+        ? '<div class="flagline"><b>読み取り時の注意</b>　'+esc(r.flagNote)+'</div>' : '')
+    + (!r.alt && !r.hand && !r.flagNote && r.uncertain.length
+        ? '<div class="flagline">要確認：'+esc(r.uncertain.join('、'))+'</div>' : '')
+    + '<div class="chips">'
+    +   EXTRA.map(([k,n])=>'<button class="chip'+(r[k]?' on':'')+'" '
+    +     'onclick="flipEx('+i+',\''+k+'\')">'+n+'</button>').join('')
+    + '</div>'
+    + (r.note ? '<div class="flagline" style="color:var(--muted)">'+esc(r.note)+'</div>' : '')
+    + (needCheck(r)
+        ? '<button class="chip" style="margin-top:8px;border-color:#2E7D4F;color:#2E7D4F" '
+          + 'onclick="confirmRow('+i+')">確認済み・問題なし</button>'
+        : (r.confirmed ? '<div class="flagline" style="color:#2E6A25"><b>確認済み</b>'
+          + (r.confirmedWhat ? '　' + esc(r.confirmedWhat) : '') + '</div>' : ''))
+    + '</div>').join('') || '<p class="hint">該当なし</p>';
+}
+
+/** 人の確認が要る部屋か。「確認済み」を押すまで消えない */
+function needCheck(r){
+  return !r.confirmed && !!(r.uncertain.length || r.hand || r.alt);
+}
+
+/** 写真と見比べて問題なければ押す。何を確認したかは保存にも残る */
+function confirmRow(i){
+  const r = ROWS[i];
+  const what = [];
+  if (r.hand) what.push('手書き');
+  if (r.alt)  what.push('読み取りの割れ');
+  r.uncertain.forEach(u => { if (u !== 'code' && u !== '手書きあり') what.push(u); });
+  r.confirmed = true;
+  r.confirmedWhat = what.join('・');
+  r.uncertain = []; r.hand = false; r.alt = '';
+  drawRows();
+}
+
+function upd(i,k,v){ ROWS[i][k]=v; }
+function setCode(i,v){
+  ROWS[i].code = v;
+  ROWS[i].kbn = kbnOf(v, ROWS[i].fullClean, ROWS[i]);
+  const u = ROWS[i].uncertain.indexOf('code');
+  if (u >= 0) ROWS[i].uncertain.splice(u,1);
+  drawRows();
+}
+function flipEx(i,k){
+  ROWS[i][k] = !ROWS[i][k];
+  if (k === 'fullClean') ROWS[i].kbn = kbnOf(ROWS[i].code, ROWS[i].fullClean, ROWS[i]);
+  drawRows();
+}
+function kbnOf(code, full, r){
+  if (r && r.lateOut && String(r.lateOut) >= '19:00') return 'NONE';   // 翌日回し
+  const m = {O:'OUT',D:'OUT',S:'STAY',SD:'STAY',V:'V'};
+  const k = m[String(code||'').toUpperCase()] || 'NONE';
+  return (k==='STAY' && full) ? 'FULL' : k;
+}
+
+function save(){
+  if (DATE_GAP && DATE_GAP !== $('date').value &&
+      !confirm('清掃指示書は ' + DATE_GAP + ' ですが、' + $('date').value
+               + ' として保存します。本当によろしいですか？')) return;
+  const rows = ROWS.filter(r=>String(r.room).trim());
+  const btn = document.querySelector('.btn.save');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>保存中';
+  google.script.run
+    .withSuccessHandler(res=>{
+      btn.disabled=false; btn.textContent='この内容で保存';
+      $('saveMsg').textContent = res.date+' の指示を '+res.saved+' 室ぶん保存しました。';
+      // 部屋に紐づかない記録（全室注意・コネクト・作成者など）も残す
+      if (ORDER) google.script.run.saveDayNote($('date').value, ORDER, DBL);
+      refresh();
+    })
+    .withFailureHandler(e=>{
+      btn.disabled=false; btn.textContent='この内容で保存';
+      $('saveMsg').textContent = '保存できませんでした。'+(e.message||'');
+    })
+    .saveImport($('date').value, rows);
+}
+
+/* ---------- 集計 ---------- */
+function refresh(){
+  const d = $('date').value;
+  google.script.run.withSuccessHandler(r=>{
+    const f = r.floors.map(x=>'<tr><td>'+esc(x.floor)+'</td><td class="n">'+x.out+'</td>'
+      +'<td class="n">'+x.stay+'</td><td class="n">'+x.full+'</td><td class="n">'+x.total+'</td>'
+      +'<td class="n">'+x.done+'</td><td class="n">'+x.dd.length+'</td>'
+      +'<td class="n">'+(x.water||'')+'</td></tr>').join('');
+    const a = r.all;
+    $('repBody').innerHTML = (f || '<tr><td colspan="8" style="color:var(--muted)">記録がありません</td></tr>')
+      + '<tr class="total"><td>合計</td><td class="n">'+a.out+'</td><td class="n">'+a.stay+'</td>'
+      + '<td class="n">'+a.full+'</td><td class="n">'+a.total+'</td><td class="n">'+a.done+'</td>'
+      + '<td class="n">'+a.dd.length+'</td><td class="n">'+(a.water||'')+'</td></tr>';
+  }).getReport(d);
+
+  google.script.run.withSuccessHandler(s=>{
+    fill('sumStaff', s.staff); fill('sumKbn', s.kbn);
+  }).getSummary(d);
+
+  google.script.run.withSuccessHandler(sp=>{
+    drawSpConf(sp);
+    $('special').innerHTML = sp.items.map(it=>{
+      const pct = Math.min(100, Math.round(it.done / sp.total * 100));
+      const rest = it.todo.length;
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--line)">'
+        + '<div style="display:flex;justify-content:space-between;font-size:14px">'
+        +   '<b>'+esc(it.name)+'</b>'
+        +   '<span style="font-variant-numeric:tabular-nums">'+it.done+' / '+sp.total+' 室'
+        +   '　残数 '+(it.done - sp.total)+'</span></div>'
+        + '<div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden">'
+        +   '<span style="display:block;height:100%;width:'+pct+'%;background:var(--ok)"></span></div>'
+        + (rest ? '<div style="font-size:12px;color:var(--muted);margin-top:5px">'
+            + '未実施 ' + rest + '室　'
+            + '<a href="#" onclick="return showTodo(\''+it.key+'\')">部屋番号を見る</a>'
+            + '<span id="todo-'+it.key+'" hidden>：' + esc(it.todo.join('、')) + '</span></div>' : '')
+        + '</div>';
+    }).join('');
+  }).withFailureHandler(()=>{}).getSpecial(d.slice(0,7));
+
+  google.script.run.withSuccessHandler(res=>{
+    $('staleCard').hidden = !res.rows.length;
+    $('staleList').innerHTML = res.rows.map(r=>
+      '<div class="stalerow"><b>'+esc(r.room)+'</b><span class="tk">'+esc(r.task)+'</span>'
+      +'<span>'+esc(r.staff||'担当者不明')+'</span>'
+      +'<span class="mi">'+esc(r.start)+' から '+r.mins+'分</span></div>').join('');
+  }).withFailureHandler(()=>{}).getStale(d, 60);
+}
+
+function fill(id, rows){
+  if (!rows.length){ $(id).innerHTML =
+    '<tr><td colspan="4" style="color:var(--muted)">完了した部屋はまだありません</td></tr>'; return; }
+  const tR = rows.reduce((a,b)=>a+b.rooms,0), tM = rows.reduce((a,b)=>a+b.minutes,0);
+  $(id).innerHTML = rows.map(r=>'<tr><td>'+esc(r.key)+'</td><td class="n">'+r.rooms+'</td>'
+    +'<td class="n">'+r.minutes+'分</td><td class="n">'+r.avg+'分</td></tr>').join('')
+    + '<tr class="total"><td>全体</td><td class="n">'+tR+'</td><td class="n">'+tM+'分</td>'
+    + '<td class="n">'+(tR?Math.round(tM/tR):0)+'分</td></tr>';
+}
+
+/* ---------- 特別清掃の枠名（毎月ホテル指定） ---------- */
+function drawSpConf(sp){
+  const opt = (v, cur) => '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'
+    + (v || '—') + '</option>';
+  $('spConf').innerHTML =
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:8px">'
+    +   esc(sp.month) + ' の特別清掃の内容'
+    +   (sp.inheritedFrom ? '　<span style="color:var(--warn)">（' + esc(sp.inheritedFrom)
+    +     ' の設定を引き継いでいます）</span>' : '') + '</div>'
+    + [0,1].map(i =>
+        '<div style="margin-bottom:7px"><b style="font-size:12px;color:var(--muted);'
+        + 'display:inline-block;min-width:54px">' + (i+1) + '枠目</b>'
+        + '<select id="spName'+i+'" style="border:1px solid var(--line);border-radius:6px;'
+        + 'padding:8px;background:var(--surface);min-width:210px">'
+        + opt('', sp.names[i]) + sp.choices.map(c => opt(c, sp.names[i])).join('')
+        + '</select></div>').join('')
+    + '<div style="margin-bottom:7px"><b style="font-size:12px;color:var(--muted);'
+    +   'display:inline-block;min-width:54px">3枠目</b>'
+    +   '<input id="spName2" value="" placeholder="'
+    +     esc(sp.names[2] ? '今：' + sp.names[2] + '（変えるときだけ入力）' : '自由に入力') + '" '
+    +   'style="border:1px solid var(--line);border-radius:6px;padding:8px;'
+    +   'background:var(--surface);min-width:210px"></div>'
+    + '<button class="btn ghost" style="margin-top:6px" onclick="saveSpNames()">'
+    +   'この月の内容を保存</button>'
+    + '<div class="msg" id="spMsg"></div>';
+}
+
+function saveSpNames(){
+  const names = [$('spName0').value, $('spName1').value, $('spName2').value];
+  $('spMsg').innerHTML = '<span class="spin"></span>保存中…';
+  google.script.run
+    .withSuccessHandler(r=>{ $('spMsg').textContent = '保存しました'; refresh(); })
+    .withFailureHandler(e=>{ $('spMsg').textContent = e.message || '保存できませんでした'; })
+    .setSpecialNames($('date').value.slice(0,7), names);
+}
+
+function makeSpecial(){
+  $('spSheetMsg').innerHTML = '<span class="spin"></span>作成中…';
+  google.script.run
+    .withSuccessHandler(r=>{
+      $('spSheetMsg').innerHTML = r.month + ' の特別清掃シートを作りました。<br>'
+        + r.items.map(x=>esc(x.name)+' '+x.done+'部屋（残'+x.remain+'）').join('　')
+        + '<br><a href="'+r.url+'" target="_blank" rel="noopener">「特別清掃」タブを開く</a>';
+    })
+    .withFailureHandler(e=>{ $('spSheetMsg').textContent = e.message || '作れませんでした'; })
+    .buildSpecialSheet($('date').value.slice(0,7));
+}
+
+function showTodo(k){
+  const el = $('todo-'+k);
+  if (el) el.hidden = !el.hidden;
+  return false;
+}
+
+function makeDaily(){
+  $('dailyMsg').innerHTML = '<span class="spin"></span>作成中…';
+  google.script.run
+    .withSuccessHandler(r=>{
+      const p = r.pending || {};
+      const todo = [
+        ['チェックが終わっていない部屋', p.noCheck],
+        ['入室したまま退出していない部屋', p.inRoom],
+        ['回収を確認していない部屋', p.collect],
+        ['DDセット・DDチェックが済んでいない部屋', p.ddTodo]
+      ].filter(x => x[1] && x[1].length);
+      $('dailyMsg').innerHTML = r.date + ' の日報を作りました（未清掃 ' + r.undone
+        + '室 / メイク ' + r.people + '人 / 終了 ' + (r.last || '—') + '）<br>'
+        + '<a href="'+r.url+'" target="_blank" rel="noopener">客室清掃日報を開く</a>'
+        + (r.mgr && r.mgr.url
+            ? '　<a href="'+r.mgr.url+'" target="_blank" rel="noopener">責任者業務日報を開く</a>'
+            : (r.mgr && r.mgr.error ? '<br>責任者業務日報は作れませんでした：' + esc(r.mgr.error) : ''))
+        + '<br>薄い黄色は手で書く欄です。同じ日付で作り直しても消えません。'
+        + (todo.length
+            ? todo.map(x => '<div class="bar ng" style="margin-top:8px"><b>' + x[0] + '　'
+                + x[1].length + '室</b>' + esc(x[1].join('、')) + '</div>').join('')
+              + '<div class="hint" style="margin-top:6px">終わっていない部屋は日報の数に入っていません。'
+              + '済ませてからもう一度作ってください。</div>'
+            : '<div class="bar ok" style="margin-top:8px"><b>やり残しなし</b>全部屋のチェックが終わっています</div>');
+    })
+    .withFailureHandler(e=>{ $('dailyMsg').textContent = e.message || '作れませんでした'; })
+    .buildDailyReport($('date').value);
+}
+
+function makeFloor(){
+  $('frMsg').innerHTML = '<span class="spin"></span>作成中…（1分ほどかかります）';
+  google.script.run
+    .withSuccessHandler(r=>{
+      $('frMsg').innerHTML = r.date + ' のフロアレポートを ' + r.floors.length + '階ぶん作りました（'
+        + esc(r.floors.join('・')) + '）<br>'
+        + '<a href="'+r.url+'" target="_blank" rel="noopener">フロアレポートを開く</a>'
+        + (r.pdf ? '　<a href="'+r.pdf+'" target="_blank" rel="noopener">全階のPDFを開く</a>' : '')
+        + (r.pdfError ? '<br>PDFは作れませんでした：' + esc(r.pdfError) : '')
+        + '<br>シート名は「フロアレポート 2F」〜。作り直すと上書きされます。'
+        + '印刷は ファイル → 印刷 → 横向き・幅に合わせる。';
+    })
+    .withFailureHandler(e=>{ $('frMsg').textContent = e.message || '作れませんでした'; })
+    .buildFloorReport($('date').value);
+}
+
+function makeManager(){
+  $('mgrMsg').innerHTML = '<span class="spin"></span>作成中…';
+  google.script.run
+    .withSuccessHandler(r=>{
+      $('mgrMsg').innerHTML = r.date + ' の責任者業務日報を作りました（清掃数 ' + r.clean
+        + '室 / 出勤 ' + r.people + '人）<br>'
+        + '<a href="'+r.url+'" target="_blank" rel="noopener">「責任者業務日報」タブを開く</a>'
+        + '<br>黄色いマスは手で書く欄です。作り直すと上書きされるので、印刷してから作り直してください。';
+    })
+    .withFailureHandler(e=>{ $('mgrMsg').textContent = e.message || '作れませんでした'; })
+    .buildManagerReport($('date').value);
+}
+
+function makeDecl(){
+  google.script.run.withSuccessHandler(r=>{
+    $('decl').value = r.text;
+    $('decl').style.display='block'; $('copyBtn').style.display='block';
+  }).withFailureHandler(e=>alert(e.message||'作成できませんでした'))
+    .getDeclarationText($('date').value);
+}
+
+function copyDecl(){
+  const t = $('decl'), btn = $('copyBtn');
+  const done = ()=>{ btn.textContent='コピーしました';
+    setTimeout(()=>{btn.textContent='コピーする';},2000); };
+  const fb = ()=>{ t.readOnly=false; t.select(); t.setSelectionRange(0,99999);
+    try{ document.execCommand('copy'); done(); }
+    catch(e){ btn.textContent='長押しで選択してコピーしてください'; }
+    t.readOnly=true; };
+  if (navigator.clipboard && window.isSecureContext)
+    navigator.clipboard.writeText(t.value).then(done).catch(fb);
+  else fb();
+}
+
+$('date').addEventListener('change', ()=>{ $('hdrDate').textContent=$('date').value; refresh(); });
+$('pin').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(); });
+</script>
+</body>
+</html>

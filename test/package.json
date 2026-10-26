@@ -1,0 +1,13 @@
+{
+  "name": "minamikata-dry-run",
+  "private": true,
+  "description": "アパ南方 清掃アプリを GAS の代わりの仕掛けで通すテスト",
+  "scripts": {
+    "test": "STRICT=1 node run0929.js && STRICT=1 node run_new.js && node run_ocr.js",
+    "ui": "node ui.js && node ui_admin.js"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "3.11.174",
+    "playwright": "^1.47.0"
+  }
+}

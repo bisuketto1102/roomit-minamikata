@@ -1,0 +1,321 @@
+<script>
+/*************************************************
+ * 表示する言葉。ここだけ直せば全画面に反映される。
+ *
+ * 端末の言語設定を見て自動で切り替わる。
+ * 辞書にない言語は英語になる。
+ * 上の言語ボタンで選ぶと、その端末はその言語で固定される。
+ *
+ * ※ 日本語と英語以外は機械翻訳。現場の人に見てもらって直すこと。
+ *   特に g_block（まだ入れない）は入室の可否に関わるので要確認。
+ *************************************************/
+const T = {
+
+ja: {
+  rooms:'室', checked:'チェック', blocked:'未アウト',
+  refresh:'更新', pick:'選択', picking:'選択中',
+  lg_D:'未アウト', lg_O:'出済', lg_S:'ステイ', lg_V:'空室',
+  lg_doing:'作業中', lg_done:'清掃完了', lg_checked:'チェック済',
+  empty1:'今日の指示がまだ入っていません', empty2:'管理画面から取り込んでください',
+  selN:'{n} 室を選択中',
+  setO:'アウト済にする', setD:'アウト前に戻す',
+  outBefore:'アウト前', outDone:'アウト済', onlyOut:'アウトの部屋を選んでください',
+  ddOn:'DD設置', ddOff:'DD解除', skipOn:'清掃不要', skipOff:'清掃不要 解除',
+  setDue:'締切を入れる', stopPick:'選択をやめる',
+  k_OUT:'アウト', k_STAY:'ステイ', k_FULL:'フルメイク', k_V:'空室', k_NONE:'対象外',
+  g_block:'まだ入れない', g_go:'入れる', g_skip:'清掃不要',
+  due:'{t}まで', dueLeft:'あと{n}分', dueOver:'{n}分すぎた',
+  ord:'指示', full:'フル清掃', nomake:'ノーメイク', linen:'リネン交換',
+  extend:'延泊', pop:'POP回収', lateout:'レイトアウト',
+  rec:'記録', ddSet:'DD（ドア前セット）', pickup:'ゴミ箱回収',
+  bag:'使用済みバッグ回収', undone:'未清掃', supply:'備品',
+  water:'水', bottles:'本', fridge:'冷蔵庫（清掃時）', fridge2:'冷蔵庫（チェック時）',
+  memoPh:'忘れ物・言われたこと など',
+  wmake:'Wメイク', single:'シングルに戻す', eco:'エコ清掃', collect:'回収', collectTitle:'回収の確認',
+  collectHint:'ゴミ・リネンを回収した部屋です。確かめたら「確認」を押してください。',
+  collectLeft:'未確認 {n} / {all} 室', confirmBtn:'確認', cancelBtn:'取消', checkedBy:'確認：', noCollect:'回収した部屋はまだありません',
+  trash:'ゴミ', bagShort:'リネン',
+  ddSetTask:'DDセット', ddCheckTask:'DDチェック', afterDdSet:'DDセットの完了後', ddNoWork:'DD（備品 不要）なので作業はありません',
+  sp:'特別清掃', spLast:'前回 {d}（{n}日前）', spNone:'今月まだ', spToday:'今日やった', sp1:'エアコン・掃除機', sp2:'排水溝', sp3:'ブック・テレビ裏',
+  clean:'清掃', check:'チェック',
+  enter:'入室', exit:'退出', undo:'入室前に戻す', reopen:'作業中に戻す',
+  afterClean:'清掃の完了後', close:'閉じる',
+  pickName:'先に名前を選んで', failed:'通信できなかった',
+  notYet:'未アウト', skipTile:'清掃不要', min:'分',
+  selName:'— 名前を選んでください —',
+  cfUndo:'{r} の{t}を入室前に戻す。記録が消えます。',
+  cfReopen:'{r} の{t}の退出を取り消す。',
+  cfBulk:'{n} 室を「{w}」にします。'
+},
+
+en: {
+  rooms:'rooms', checked:'Checked', blocked:'Not out',
+  refresh:'Refresh', pick:'Select', picking:'Selecting',
+  lg_D:'Not out', lg_O:'Checked out', lg_S:'Staying', lg_V:'Vacant',
+  lg_doing:'In progress', lg_done:'Cleaned', lg_checked:'Checked',
+  empty1:'No instructions for today yet', empty2:'Import from the admin screen',
+  selN:'{n} rooms selected',
+  setO:'Mark as checked out', setD:'Back to not out',
+  outBefore:'Not out yet', outDone:'Checked out', onlyOut:'Select check-out rooms',
+  ddOn:'Set DD', ddOff:'Remove DD', skipOn:'No cleaning', skipOff:'Undo no cleaning',
+  setDue:'Set deadline', stopPick:'Stop selecting',
+  k_OUT:'Check-out', k_STAY:'Stay', k_FULL:'Full make', k_V:'Vacant', k_NONE:'Not cleaned',
+  g_block:'Cannot enter yet', g_go:'You can enter', g_skip:'No cleaning',
+  due:'By {t}', dueLeft:'{n} min left', dueOver:'{n} min over',
+  ord:'Instructions', full:'Full cleaning', nomake:'No make-up', linen:'Linen change',
+  extend:'Extended stay', pop:'Collect POP', lateout:'Late check-out',
+  rec:'Record', ddSet:'DD (set at door)', pickup:'Trash pickup',
+  bag:'Used-linen bag pickup', undone:'Not cleaned', supply:'Amenities',
+  water:'Water', bottles:'bottles', fridge:'Fridge (cleaning)', fridge2:'Fridge (check)',
+  memoPh:'Lost items, guest requests...',
+  wmake:'Double make', single:'Back to single', eco:'Eco cleaning', collect:'Pickup', collectTitle:'Pickup check',
+  collectHint:'Rooms where trash or linen was collected. Tap Confirm after checking.',
+  collectLeft:'{n} of {all} not checked', confirmBtn:'Confirm', cancelBtn:'Cancel', checkedBy:'Checked:', noCollect:'No pickups yet',
+  trash:'Trash', bagShort:'Linen',
+  ddSetTask:'DD setup', ddCheckTask:'DD check', afterDdSet:'After DD setup is done', ddNoWork:'DD (no amenities) — nothing to do',
+  sp:'Deep cleaning', spLast:'Last: {d} ({n} days ago)', spNone:'Not done yet', spToday:'Done today', sp1:'AC / vacuum', sp2:'Bathroom drain', sp3:'Behind books / TV',
+  clean:'Cleaning', check:'Check',
+  enter:'Enter', exit:'Leave', undo:'Undo entry', reopen:'Back to in progress',
+  afterClean:'After cleaning is done', close:'Close',
+  pickName:'Please select your name first', failed:'Connection failed',
+  notYet:'Not out', skipTile:'No cleaning', min:'min',
+  selName:'— Select your name —',
+  cfUndo:'Undo entry for {t} in {r}. The record will be deleted.',
+  cfReopen:'Cancel the exit for {t} in {r}.',
+  cfBulk:'Set {n} rooms to "{w}".'
+},
+
+vi: {
+  rooms:'phòng', checked:'Đã kiểm tra', blocked:'Chưa trả phòng',
+  refresh:'Cập nhật', pick:'Chọn', picking:'Đang chọn',
+  lg_D:'Chưa trả phòng', lg_O:'Đã trả phòng', lg_S:'Khách ở lại', lg_V:'Phòng trống',
+  lg_doing:'Đang làm', lg_done:'Đã dọn xong', lg_checked:'Đã kiểm tra',
+  empty1:'Hôm nay chưa có chỉ thị', empty2:'Hãy nhập từ màn hình quản lý',
+  selN:'Đang chọn {n} phòng',
+  setO:'Đánh dấu đã trả phòng', setD:'Quay lại chưa trả phòng',
+  outBefore:'Chưa trả phòng', outDone:'Đã trả phòng', onlyOut:'Hãy chọn phòng trả',
+  ddOn:'Đặt DD', ddOff:'Bỏ DD', skipOn:'Không cần dọn', skipOff:'Bỏ không cần dọn',
+  setDue:'Đặt giờ hạn', stopPick:'Dừng chọn',
+  k_OUT:'Trả phòng', k_STAY:'Ở lại', k_FULL:'Dọn toàn bộ', k_V:'Phòng trống', k_NONE:'Không dọn',
+  g_block:'Chưa vào được', g_go:'Vào được', g_skip:'Không cần dọn',
+  due:'Đến {t}', dueLeft:'Còn {n} phút', dueOver:'Quá {n} phút',
+  ord:'Chỉ thị', full:'Dọn toàn bộ', nomake:'Không dọn phòng', linen:'Đổi ga giường',
+  extend:'Ở thêm', pop:'Thu POP', lateout:'Trả phòng muộn',
+  rec:'Ghi chép', ddSet:'DD (đặt trước cửa)', pickup:'Thu rác',
+  bag:'Thu túi ga bẩn', undone:'Chưa dọn', supply:'Đồ dùng',
+  water:'Nước', bottles:'chai', fridge:'Tủ lạnh (khi dọn)', fridge2:'Tủ lạnh (khi kiểm tra)',
+  memoPh:'Đồ bỏ quên, khách dặn...',
+  wmake:'Làm giường đôi', single:'Trở lại giường đơn', eco:'Dọn eco', collect:'Thu gom', collectTitle:'Kiểm tra thu gom',
+  collectHint:'Phòng đã thu rác / ga. Kiểm tra xong hãy bấm Xác nhận.',
+  collectLeft:'Chưa xác nhận {n} / {all} phòng', confirmBtn:'Xác nhận', cancelBtn:'Hủy', checkedBy:'Đã xác nhận:', noCollect:'Chưa có phòng thu gom',
+  trash:'Rác', bagShort:'Ga',
+  ddSetTask:'Đặt DD', ddCheckTask:'Kiểm tra DD', afterDdSet:'Sau khi đặt DD xong', ddNoWork:'DD (không cần đồ) — không có việc',
+  sp:'Vệ sinh định kỳ', spLast:'Lần trước {d} ({n} ngày trước)', spNone:'Chưa làm', spToday:'Đã làm hôm nay', sp1:'Điều hòa / hút bụi', sp2:'Thoát nước nhà tắm', sp3:'Sau sách / TV',
+  clean:'Dọn phòng', check:'Kiểm tra',
+  enter:'Vào phòng', exit:'Ra khỏi phòng', undo:'Hủy vào phòng', reopen:'Quay lại đang làm',
+  afterClean:'Sau khi dọn xong', close:'Đóng',
+  pickName:'Hãy chọn tên trước', failed:'Không kết nối được',
+  notYet:'Chưa trả phòng', skipTile:'Không dọn', min:'phút',
+  selName:'— Hãy chọn tên —',
+  cfUndo:'Hủy việc vào phòng {r} ({t}). Ghi chép sẽ bị xóa.',
+  cfReopen:'Hủy việc ra khỏi phòng {r} ({t}).',
+  cfBulk:'Đặt {n} phòng thành "{w}".'
+},
+
+ne: {
+  rooms:'कोठा', checked:'जाँच भयो', blocked:'चेकआउट बाँकी',
+  refresh:'अपडेट', pick:'छान्नुहोस्', picking:'छान्दै',
+  lg_D:'चेकआउट बाँकी', lg_O:'चेकआउट भयो', lg_S:'बसिरहेको', lg_V:'खाली कोठा',
+  lg_doing:'काम हुँदैछ', lg_done:'सफाइ सकियो', lg_checked:'जाँच भयो',
+  empty1:'आजको निर्देशन आएको छैन', empty2:'व्यवस्थापन पृष्ठबाट हाल्नुहोस्',
+  selN:'{n} कोठा छानिएको',
+  setO:'चेकआउट भएको भन्ने', setD:'चेकआउट बाँकीमा फर्काउने',
+  outBefore:'चेकआउट बाँकी', outDone:'चेकआउट भयो', onlyOut:'चेकआउट कोठा छान्नुहोस्',
+  ddOn:'DD राख्ने', ddOff:'DD हटाउने', skipOn:'सफाइ नचाहिने', skipOff:'सफाइ नचाहिने हटाउने',
+  setDue:'समय सीमा राख्ने', stopPick:'छनोट रोक्ने',
+  k_OUT:'चेकआउट', k_STAY:'बसिरहेको', k_FULL:'पूर्ण सफाइ', k_V:'खाली', k_NONE:'नगर्ने',
+  g_block:'अहिले पस्न मिल्दैन', g_go:'पस्न मिल्छ', g_skip:'सफाइ नचाहिने',
+  due:'{t} सम्म', dueLeft:'{n} मिनेट बाँकी', dueOver:'{n} मिनेट नाघ्यो',
+  ord:'निर्देशन', full:'पूर्ण सफाइ', nomake:'सफाइ नगर्ने', linen:'तन्ना फेर्ने',
+  extend:'थप बसाइ', pop:'POP उठाउने', lateout:'ढिलो चेकआउट',
+  rec:'रेकर्ड', ddSet:'DD (ढोका अगाडि राख्ने)', pickup:'फोहोर उठाउने',
+  bag:'प्रयोग भएको झोला उठाउने', undone:'सफाइ नभएको', supply:'सामान',
+  water:'पानी', bottles:'बोतल', fridge:'फ्रिज (सफाइ)', fridge2:'फ्रिज (जाँच)',
+  memoPh:'छुटेको सामान, पाहुनाले भनेको कुरा...',
+  wmake:'डबल मेक', single:'सिङ्गलमा फर्काउने', eco:'इको सफाइ', collect:'संकलन', collectTitle:'संकलन जाँच',
+  collectHint:'फोहोर / तन्ना उठाएका कोठा। जाँचेपछि पुष्टि थिच्नुहोस्।',
+  collectLeft:'बाँकी {n} / {all} कोठा', confirmBtn:'पुष्टि', cancelBtn:'रद्द', checkedBy:'पुष्टि:', noCollect:'अहिलेसम्म संकलन छैन',
+  trash:'फोहोर', bagShort:'तन्ना',
+  ddSetTask:'DD राख्ने', ddCheckTask:'DD जाँच', afterDdSet:'DD राखिसकेपछि', ddNoWork:'DD (सामान नचाहिने) — काम छैन',
+  sp:'विशेष सफाइ', spLast:'गत पटक {d} ({n} दिन अघि)', spNone:'अझै गरिएको छैन', spToday:'आज गरियो', sp1:'एसी / भ्याकुम', sp2:'बाथरुम ड्रेन', sp3:'किताब / टिभी पछाडि',
+  clean:'सफाइ', check:'जाँच',
+  enter:'कोठामा पस्ने', exit:'कोठाबाट निस्कने', undo:'पस्नु अघि फर्काउने', reopen:'काममा फर्काउने',
+  afterClean:'सफाइ सकिएपछि', close:'बन्द गर्ने',
+  pickName:'पहिले नाम छान्नुहोस्', failed:'सम्पर्क भएन',
+  notYet:'चेकआउट बाँकी', skipTile:'सफाइ नचाहिने', min:'मिनेट',
+  selName:'— नाम छान्नुहोस् —',
+  cfUndo:'{r} को {t} पस्नु अघिको अवस्थामा फर्काउने। रेकर्ड मेटिन्छ।',
+  cfReopen:'{r} को {t} निस्केको रद्द गर्ने।',
+  cfBulk:'{n} कोठालाई "{w}" बनाउने।'
+},
+
+my: {
+  rooms:'ခန်း', checked:'စစ်ပြီး', blocked:'မထွက်သေး',
+  refresh:'အသစ်ယူ', pick:'ရွေး', picking:'ရွေးနေသည်',
+  lg_D:'မထွက်သေး', lg_O:'ထွက်ပြီး', lg_S:'ဆက်နေ', lg_V:'အခန်းလွတ်',
+  lg_doing:'လုပ်နေသည်', lg_done:'သန့်ရှင်းပြီး', lg_checked:'စစ်ပြီး',
+  empty1:'ယနေ့အတွက် ညွှန်ကြားချက် မရှိသေးပါ', empty2:'စီမံခန့်ခွဲမှုစာမျက်နှာမှ ထည့်ပါ',
+  selN:'{n} ခန်း ရွေးထားသည်',
+  setO:'ထွက်ပြီးအဖြစ် မှတ်', setD:'မထွက်သေးသို့ ပြန်',
+  outBefore:'မထွက်သေး', outDone:'ထွက်ပြီး', onlyOut:'ထွက်ခွာခန်းကို ရွေးပါ',
+  ddOn:'DD ထား', ddOff:'DD ဖယ်', skipOn:'မသန့်ရှင်းရ', skipOff:'မသန့်ရှင်းရ ဖယ်',
+  setDue:'အချိန်ကန့်သတ် ထည့်', stopPick:'ရွေးခြင်း ရပ်',
+  k_OUT:'ထွက်ခွာ', k_STAY:'ဆက်နေ', k_FULL:'အပြည့် သန့်ရှင်း', k_V:'လွတ်', k_NONE:'မလုပ်ရ',
+  g_block:'မဝင်ရသေး', g_go:'ဝင်နိုင်သည်', g_skip:'မသန့်ရှင်းရ',
+  due:'{t} အထိ', dueLeft:'{n} မိနစ် ကျန်', dueOver:'{n} မိနစ် ကျော်',
+  ord:'ညွှန်ကြားချက်', full:'အပြည့် သန့်ရှင်း', nomake:'မသန့်ရှင်းရ', linen:'အိပ်ရာခင်း လဲ',
+  extend:'ဆက်တည်း', pop:'POP သိမ်း', lateout:'နောက်ကျ ထွက်',
+  rec:'မှတ်တမ်း', ddSet:'DD (တံခါးရှေ့ ထား)', pickup:'အမှိုက် သိမ်း',
+  bag:'သုံးပြီးအိတ် သိမ်း', undone:'မသန့်ရှင်းရသေး', supply:'ပစ္စည်း',
+  water:'ရေ', bottles:'ဘူး', fridge:'ရေခဲသေတ္တာ (သန့်ရှင်းချိန်)', fridge2:'ရေခဲသေတ္တာ (စစ်ချိန်)',
+  memoPh:'ကျန်ခဲ့သော ပစ္စည်း၊ ဧည့်သည် ပြောကြားချက်...',
+  wmake:'နှစ်ယောက်အိပ်ရာ', single:'တစ်ယောက်အိပ်ရာသို့ ပြန်', eco:'အီကို သန့်ရှင်း', collect:'သိမ်းဆည်း', collectTitle:'သိမ်းဆည်းမှု စစ်ဆေး',
+  collectHint:'အမှိုက် / အိပ်ရာခင်း သိမ်းထားသော အခန်းများ။ စစ်ပြီးလျှင် အတည်ပြု နှိပ်ပါ။',
+  collectLeft:'မစစ်ရသေး {n} / {all} ခန်း', confirmBtn:'အတည်ပြု', cancelBtn:'ပယ်ဖျက်', checkedBy:'စစ်ပြီး:', noCollect:'သိမ်းထားသော အခန်း မရှိသေး',
+  trash:'အမှိုက်', bagShort:'အိပ်ရာခင်း',
+  ddSetTask:'DD ထား', ddCheckTask:'DD စစ်', afterDdSet:'DD ထားပြီးမှ', ddNoWork:'DD (ပစ္စည်း မလို) — လုပ်ရန် မရှိ',
+  sp:'အထူး သန့်ရှင်းရေး', spLast:'နောက်ဆုံး {d} ({n} ရက်က)', spNone:'မလုပ်ရသေး', spToday:'ယနေ့ လုပ်ပြီး', sp1:'အဲယားကွန်း / ဖုန်စုပ်', sp2:'ရေချိုးခန်း ရေမြောင်း', sp3:'စာအုပ် / တီဗီ နောက်',
+  clean:'သန့်ရှင်းရေး', check:'စစ်ဆေး',
+  enter:'အခန်းဝင်', exit:'အခန်းထွက်', undo:'မဝင်မီသို့ ပြန်', reopen:'လုပ်နေဆဲသို့ ပြန်',
+  afterClean:'သန့်ရှင်းပြီးမှ', close:'ပိတ်',
+  pickName:'အရင် နာမည် ရွေးပါ', failed:'ဆက်သွယ်၍ မရပါ',
+  notYet:'မထွက်သေး', skipTile:'မသန့်ရှင်းရ', min:'မိနစ်',
+  selName:'— နာမည် ရွေးပါ —',
+  cfUndo:'{r} ၏ {t} ကို မဝင်မီသို့ ပြန်မည်။ မှတ်တမ်း ပျက်သွားမည်။',
+  cfReopen:'{r} ၏ {t} ထွက်ခြင်းကို ပယ်ဖျက်မည်။',
+  cfBulk:'{n} ခန်းကို "{w}" အဖြစ် သတ်မှတ်မည်။'
+},
+
+id: {
+  rooms:'kamar', checked:'Diperiksa', blocked:'Belum check-out',
+  refresh:'Perbarui', pick:'Pilih', picking:'Memilih',
+  lg_D:'Belum check-out', lg_O:'Sudah check-out', lg_S:'Menginap', lg_V:'Kamar kosong',
+  lg_doing:'Sedang dikerjakan', lg_done:'Selesai dibersihkan', lg_checked:'Diperiksa',
+  empty1:'Belum ada instruksi hari ini', empty2:'Silakan impor dari layar admin',
+  selN:'{n} kamar dipilih',
+  setO:'Tandai sudah check-out', setD:'Kembali ke belum check-out',
+  outBefore:'Belum check-out', outDone:'Sudah check-out', onlyOut:'Pilih kamar check-out',
+  ddOn:'Pasang DD', ddOff:'Lepas DD', skipOn:'Tidak perlu dibersihkan', skipOff:'Batalkan',
+  setDue:'Atur batas waktu', stopPick:'Berhenti memilih',
+  k_OUT:'Check-out', k_STAY:'Menginap', k_FULL:'Pembersihan penuh', k_V:'Kosong', k_NONE:'Tidak dikerjakan',
+  g_block:'Belum boleh masuk', g_go:'Boleh masuk', g_skip:'Tidak perlu dibersihkan',
+  due:'Sampai {t}', dueLeft:'Sisa {n} menit', dueOver:'Lewat {n} menit',
+  ord:'Instruksi', full:'Pembersihan penuh', nomake:'Tanpa pembersihan', linen:'Ganti seprai',
+  extend:'Perpanjang menginap', pop:'Ambil POP', lateout:'Check-out lambat',
+  rec:'Catatan', ddSet:'DD (taruh di depan pintu)', pickup:'Ambil sampah',
+  bag:'Ambil kantong linen bekas', undone:'Belum dibersihkan', supply:'Amenitas',
+  water:'Air', bottles:'botol', fridge:'Kulkas (saat bersih)', fridge2:'Kulkas (saat cek)',
+  memoPh:'Barang tertinggal, pesan tamu...',
+  wmake:'Double make', single:'Kembali ke single', eco:'Pembersihan eco', collect:'Ambil', collectTitle:'Cek pengambilan',
+  collectHint:'Kamar yang sampah / linennya sudah diambil. Setelah dicek, tekan Konfirmasi.',
+  collectLeft:'Belum dicek {n} / {all} kamar', confirmBtn:'Konfirmasi', cancelBtn:'Batal', checkedBy:'Dicek:', noCollect:'Belum ada pengambilan',
+  trash:'Sampah', bagShort:'Linen',
+  ddSetTask:'Pasang DD', ddCheckTask:'Cek DD', afterDdSet:'Setelah DD dipasang', ddNoWork:'DD (tanpa amenitas) — tidak ada pekerjaan',
+  sp:'Pembersihan berkala', spLast:'Terakhir {d} ({n} hari lalu)', spNone:'Belum dilakukan', spToday:'Selesai hari ini', sp1:'AC / vakum', sp2:'Saluran kamar mandi', sp3:'Belakang buku / TV',
+  clean:'Pembersihan', check:'Pemeriksaan',
+  enter:'Masuk kamar', exit:'Keluar kamar', undo:'Batalkan masuk', reopen:'Kembali dikerjakan',
+  afterClean:'Setelah pembersihan selesai', close:'Tutup',
+  pickName:'Pilih nama Anda dulu', failed:'Gagal terhubung',
+  notYet:'Belum check-out', skipTile:'Tidak dibersihkan', min:'menit',
+  selName:'— Pilih nama —',
+  cfUndo:'Batalkan masuk {t} di kamar {r}. Catatan akan dihapus.',
+  cfReopen:'Batalkan keluar {t} di kamar {r}.',
+  cfBulk:'Ubah {n} kamar menjadi "{w}".'
+},
+
+zh: {
+  rooms:'间', checked:'已检查', blocked:'未退房',
+  refresh:'更新', pick:'选择', picking:'选择中',
+  lg_D:'未退房', lg_O:'已退房', lg_S:'续住', lg_V:'空房',
+  lg_doing:'进行中', lg_done:'清扫完成', lg_checked:'已检查',
+  empty1:'今天还没有指示', empty2:'请从管理画面导入',
+  selN:'已选 {n} 间',
+  setO:'标记为已退房', setD:'退回未退房',
+  outBefore:'未退房', outDone:'已退房', onlyOut:'请选择退房房间',
+  ddOn:'设置DD', ddOff:'取消DD', skipOn:'无需清扫', skipOff:'取消无需清扫',
+  setDue:'设置截止时间', stopPick:'停止选择',
+  k_OUT:'退房', k_STAY:'续住', k_FULL:'全面清扫', k_V:'空房', k_NONE:'不清扫',
+  g_block:'暂时不能进入', g_go:'可以进入', g_skip:'无需清扫',
+  due:'{t} 前', dueLeft:'还有 {n} 分钟', dueOver:'已超 {n} 分钟',
+  ord:'指示', full:'全面清扫', nomake:'不做清扫', linen:'更换床品',
+  extend:'续住', pop:'回收POP', lateout:'延迟退房',
+  rec:'记录', ddSet:'DD（放在门前）', pickup:'回收垃圾',
+  bag:'回收使用过的布草袋', undone:'未清扫', supply:'备品',
+  water:'水', bottles:'瓶', fridge:'冰箱（清扫时）', fridge2:'冰箱（检查时）',
+  memoPh:'遗留物品、客人交代等',
+  wmake:'双人床品', single:'恢复单人', eco:'环保清扫', collect:'回收', collectTitle:'回收确认',
+  collectHint:'已回收垃圾或布草的房间。确认后请按「确认」。',
+  collectLeft:'未确认 {n} / {all} 间', confirmBtn:'确认', cancelBtn:'取消', checkedBy:'确认：', noCollect:'还没有回收的房间',
+  trash:'垃圾', bagShort:'布草',
+  ddSetTask:'放置DD', ddCheckTask:'DD检查', afterDdSet:'放置DD完成后', ddNoWork:'DD（无需备品）— 无需作业',
+  sp:'特别清扫', spLast:'上次 {d}（{n}天前）', spNone:'本月尚未', spToday:'今天已做', sp1:'空调・吸尘', sp2:'浴室排水口', sp3:'书籍・电视后',
+  clean:'清扫', check:'检查',
+  enter:'进入房间', exit:'离开房间', undo:'退回进入前', reopen:'退回进行中',
+  afterClean:'清扫完成后', close:'关闭',
+  pickName:'请先选择姓名', failed:'连接失败',
+  notYet:'未退房', skipTile:'无需清扫', min:'分钟',
+  selName:'— 请选择姓名 —',
+  cfUndo:'将 {r} 的{t}退回进入前。记录会被删除。',
+  cfReopen:'取消 {r} 的{t}离开记录。',
+  cfBulk:'将 {n} 间设为「{w}」。'
+}
+
+};
+
+/** 言語ボタンに出す名前。その言語の表記で書く */
+const LANG_NAMES = {
+  ja:'日本語', en:'English', vi:'Tiếng Việt', ne:'नेपाली',
+  my:'မြန်မာ', id:'Indonesia', zh:'简体中文'
+};
+
+/**
+ * 表示する言語を決める。
+ *  1. 本人が選んだもの（端末に記憶）
+ *  2. 端末の言語設定
+ *  3. どちらもなければ英語
+ */
+function pickLang(){
+  const saved = localStorage.getItem('lang');
+  if (saved && T[saved]) return saved;
+  const nav = (navigator.language || '').toLowerCase();
+  if (nav.indexOf('zh') === 0) return 'zh';
+  const two = nav.slice(0, 2);
+  return T[two] ? two : 'en';
+}
+
+let LANG = pickLang();
+
+/** 言葉を取り出す。{n} などは p で差し替える */
+function t(k, p){
+  let s = (T[LANG] && T[LANG][k]) || T.en[k] || T.ja[k] || k;
+  if (p) Object.keys(p).forEach(x => { s = s.split('{'+x+'}').join(p[x]); });
+  return s;
+}
+
+/** data-t の付いた要素に流し込む */
+function applyLang(){
+  document.documentElement.lang = LANG;
+  const nodes = document.querySelectorAll('[data-t]');
+  for (let i = 0; i < nodes.length; i++){
+    const k = nodes[i].getAttribute('data-t');
+    if (nodes[i].tagName === 'INPUT') nodes[i].placeholder = t(k);
+    else nodes[i].textContent = t(k);
+  }
+}
+
+function setLang(v){
+  LANG = v;
+  localStorage.setItem('lang', v);
+  location.reload();
+}
+</script>
