@@ -31,13 +31,20 @@ NODE_PATH=/opt/node-tools/node_modules node run_shift.js   # シフト表 → �
 9/29 の正解：検算OK／OUT 110・STAY 61・FULL 8／未清掃3・実質176・除菌176・ロイヤル48・ツイン2・やり残しなし。
 
 ## デプロイ（clasp）
+```
+node tools/check.cjs          # OK になるまで push しない
+clasp push
+clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_DzoiKhfu -d "変更内容"
+```
+- `tools/check.cjs` が見ているもの：.js と HTML内 `<script>` の構文／onclick などから呼んでる関数が画面にあるか／`google.script.run`・`adminRun()` で呼んでる関数がサーバーにあるか／画面から `_` 付きを呼んでいないか／清掃員画面から暗証番号つきの関数を呼んでいないか／管理画面が暗証番号なしで管理用の関数を呼んでいないか／同じ名前の関数・定数が2つないか／scriptlet 以外の `<?`。
 - スクリプトID `1-TnpUIqQk9L8p0iTQbT4GqN1odA304JhqzGgTVWSKrHoPwEuRNF7xAV2`
 - 現場の `/exec`：`clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_DzoiKhfu -d "変更内容"`（`-i` を付けないと新しいURLになる）
 - 2026-10-26 時点で現場は @28（45列の古い版）。10/15 版（46列）はまだ入っていない。入れるときは業務後に `initSpreadsheet()` を1回。
 - 反映は業務が終わってから。
 
 ## 進め方
-- 大きな変更は：作業者が直してテスト → チェック担当（checker）がもう一度確かめる → 結果をユーザーに伝える → 業務後に反映。
+- 大きな変更は：作業者が直してテスト → チェック担当（`.claude/agents/checker.md`、名前は `checker`）がもう一度確かめる → 結果をユーザーに伝える → 業務後に反映。
+- 文言の直し・小さな見た目の調整など、小さい変更は checker を通さなくていい。checker はファイルを直さない。
 
 ## 管理用の関数と暗証番号
 - `/exec` は誰でも開けて、`google.script.run` で名前の最後に `_` が無い関数を直接呼べる。画面のロックだけでは守れない。
