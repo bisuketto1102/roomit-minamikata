@@ -52,18 +52,18 @@ try { A.clockFinish(o1, '上井 勇輔', 'clean'); ok(false, '通常の二重退
 
 console.log('■ 入室より前の退出（送り直し）は付けない');
 A.clockStart(o2, '川原 なつみ', 'clean');
-try { A.clockFinish(o2, '上井 勇輔', 'clean', NOW - 20 * MIN); ok(false, '断るべき'); } catch (e) { ok(/別の人が入室/.test(e.message), e.message); }
+try { A.clockFinish(o2, '上井 勇輔', 'clean', NOW - 20 * MIN); ok(false, '断るべき'); } catch (e) { ok(/別の人が入室|さんの作業/.test(e.message), e.message); }
 ok(A.getBoard(T).rooms.find(x => x.room === o2).clean.state === 'doing', o2 + ' は作業中のまま');
 
 console.log('■ 取り消しの送り直し');
 A.clockStart(o3, '上井 勇輔', 'clean', NOW - 15 * MIN);
-r = A.clockUndo(o3, 'clean', NOW - 14 * MIN); ok(r.clean.state === 'todo', '入室→取り消し');
-r = A.clockUndo(o3, 'clean', NOW - 14 * MIN); ok(r.clean.state === 'todo', '取り消しの二重は成功扱い');
+r = A.clockUndo(o3, 'clean', NOW - 14 * MIN, '上井 勇輔'); ok(r.clean.state === 'todo', '入室→取り消し');
+r = A.clockUndo(o3, 'clean', NOW - 14 * MIN, '上井 勇輔'); ok(r.clean.state === 'todo', '取り消しの二重は成功扱い');
 A.clockStart(o3, '川原 なつみ', 'clean');
-try { A.clockUndo(o3, 'clean', NOW - 14 * MIN); ok(false, '後から入った入室を消してはいけない'); } catch (e) { ok(/入室し直/.test(e.message), e.message); }
+try { A.clockUndo(o3, 'clean', NOW - 14 * MIN, '上井 勇輔'); ok(false, '後から入った入室を消してはいけない'); } catch (e) { ok(/入室し直|さんの作業/.test(e.message), e.message); }
 ok(A.getBoard(T).rooms.find(x => x.room === o3).clean.staff === '川原 なつみ', '川原さんの入室は残る');
 A.clockFinish(o3, '川原 なつみ', 'clean');
-try { A.clockReopen(o3, 'clean', NOW - 14 * MIN); ok(false, '後の退出は戻さない'); } catch (e) { ok(/退出し直/.test(e.message), e.message); }
+try { A.clockReopen(o3, 'clean', NOW - 14 * MIN, '川原 なつみ'); ok(false, '後の退出は戻さない'); } catch (e) { ok(/退出し直/.test(e.message), e.message); }
 
 console.log('■ 時間の上限');
 try { A.clockStart(o4, '上井 勇輔', 'clean', NOW - 37 * 3600 * 1000); ok(false, '古すぎ'); } catch (e) { ok(/時間がたちすぎ/.test(e.message), '37時間前は断る'); }
@@ -85,3 +85,29 @@ r = A.setRoomFlag1(o1, { pickup: false }); ok(!r.pickupBy && !r.collectOk, '外�
 console.log('■ まとめて操作');
 let bd = A.setRoomFlags([o2, o3], { dd: true }, NOW - 3 * MIN); ok(bd.rooms.filter(x => (x.room === o2 || x.room === o3) && x.dd).length === 2, 'DD 2室');
 bd = A.setRoomCode([outs[5]], 'O', NOW - 3 * MIN); ok(bd.rooms.find(x => x.room === outs[5]).code === 'O', 'アウト済');
+
+console.log('■ 断られた入室のあとの送り直し（別の人の作業に付けない・消さない）');
+const [p1, p2, p3, p4] = outs.slice(8);
+A.clockStart(p1, '川原 なつみ', 'clean', NOW - 40 * MIN);
+try { A.clockFinish(p1, '上井 勇輔', 'clean', NOW - 5 * MIN); ok(false, '付けてはいけない'); } catch (e) { ok(/さんの作業/.test(e.message), '退出は付けない：' + e.message); }
+ok(A.getBoard(T).rooms.find(x => x.room === p1).clean.state === 'doing', p1 + ' は川原さんの作業中のまま');
+A.clockStart(p2, '川原 なつみ', 'clean', NOW - 40 * MIN);
+try { A.clockUndo(p2, 'clean', NOW - 5 * MIN, '上井 勇輔'); ok(false, '消してはいけない'); } catch (e) { ok(/さんの作業/.test(e.message), '取り消しは消さない'); }
+ok(A.getBoard(T).rooms.find(x => x.room === p2).clean.staff === '川原 なつみ', p2 + ' 川原さんのまま');
+A.clockFinish(p2, '川原 なつみ', 'clean');
+try { A.clockFinish(p2, '上井 勇輔', 'clean', NOW - 1 * MIN); ok(false, '成功に見せない'); } catch (e) { ok(/さんの作業/.test(e.message), '完了済みでも別の人の退出は断る（赤い!が出る）'); }
+try { A.clockReopen(p2, 'clean', NOW + 0, '上井 勇輔'); ok(false, '戻さない'); } catch (e) { ok(/さんの作業/.test(e.message), '作業中に戻すも本人だけ'); }
+r = A.clockReopen(p2, 'clean', Date.now(), '川原 なつみ'); ok(r.clean.state === 'doing', '本人の作業中に戻すは通る');
+const st2 = B.rooms.filter(x => x.kbn === 'STAY' && !x.fullClean && x.room !== st)[0].room;
+A.setRoomFlag1(st2, { skip: true, dd: true });
+A.clockStart(st2, '川原 なつみ', 'clean', NOW - 20 * MIN);
+try { A.clockOnce(st2, '上井 勇輔', 'clean', NOW - 40 * MIN); ok(false, 'DDセット済を付けない'); } catch (e) { ok(/入室中/.test(e.message), 'DDセット済も別の人の入室には付けない'); }
+r = A.clockOnce(st2, '川原 なつみ', 'clean', NOW - 10 * MIN); ok(r.clean.state === 'done' && r.clean.minutes === 10, '本人のセット済は付く ' + r.clean.minutes + '分');
+console.log('■ 古い「外す」で新しい回収を消さない');
+A.setRoomFlag1(p3, { pickup: true, __by: '川原 なつみ' });
+r = A.setRoomFlag1(p3, { pickup: false, __by: '上井 勇輔' }, NOW - 3 * MIN); ok(r.pickup && /川原/.test(r.pickupBy), '川原さんの回収は残る ' + r.pickupBy);
+r = A.setRoomFlag1(p3, { pickup: false, __by: '川原 なつみ' }, NOW - 1 * MIN); ok(!r.pickup && !r.pickupBy, '本人の外すは効く');
+console.log('■ 遅れて届いた「アウト前に戻す」');
+A.clockStart(p4, '上井 勇輔', 'clean');
+bd = A.setRoomCode([p4, outs[20]], 'D', NOW - 5 * MIN);
+ok(bd.rooms.find(x => x.room === p4).code === 'O', p4 + ' 清掃に入った部屋は O のまま');

@@ -53,11 +53,13 @@ const { call, page, T } = require('./ui.js');
   OFF = true;
   await pg.click('#c-' + d4); await pg.waitForTimeout(200);
   await pg.evaluate(() => act('start', 'clean')); await pg.waitForTimeout(300);
+  await pg.evaluate(() => act('finish', 'clean')); await pg.waitForTimeout(300);
   await pg.click('.sheet.on .btn.close').catch(() => {});
   call('clockStart', [d4, '川原 なつみ', 'clean']);   // その間に別の人が入った
   OFF = false;
   await pg.evaluate(() => flush()); await pg.waitForTimeout(1500);
-  ok(await pg.isVisible('#qDrop'), '赤い印 ' + await pg.textContent('#qDrop'));
+  ok(await pg.isVisible('#qDrop') && /2/.test(await pg.textContent('#qDrop')), '入室と、その後の退出も送らず赤い印 ' + await pg.textContent('#qDrop'));
+  ok(srv(d4).clean.state === 'doing', '川原さんの作業は完了にならない');
   ok(srv(d4).clean.staff === '川原 なつみ', '川原さんの入室のまま');
   ok(await pg.evaluate(r => BOARD.rooms.find(x => x.room === r).clean.staff, d4) === '川原 なつみ', '画面も読み直して川原さん');
   await pg.screenshot({ path: 'ui_off.png' });

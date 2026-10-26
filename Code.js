@@ -722,6 +722,13 @@ function readRoomRow_(sh, date, room) {
 }
 
 /** 書き換えた行を1回で書き戻し、画面に返す形にする */
+/** 送り直しの操作が、この作業をしている人のものか（空白の違いは同じ人） */
+function samePerson_(a, b) {
+  const k = v => String(v || '').replace(/[\s\u3000]+/g, ' ').trim();
+  return k(a) === k(b);
+}
+const NOT_MINE_ = '（電波が切れている間に別の人の作業になっていたので、付けませんでした）';
+
 /** 書かずに今の状態を返す（送り直しで1回目がもう入っていたとき） */
 function rowToRoomRev_(date, v) { const o = rowToRoom_(v); o.__rev = getRev(date); return o; }
 
@@ -759,7 +766,7 @@ function clockStart(room, staff, task, at) {
     if (!x) throw new Error(room + ' は本日の指示に入っていません');
     const v = x.v;
 
-    if (w.replay && v[c] && String(v[c - 1]) === String(staff)) return rowToRoomRev_(date, v);   // 1回目が届いていた
+    if (w.replay && v[c] && samePerson_(v[c - 1], staff)) return rowToRoomRev_(date, v);   // 1回目が届いていた
     if (task === 'check' && !v[TASK_COL.clean + 1]) throw new Error(room + ' はまだ清掃が終わっていません');
     if (v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんが完了済みです');
     if (v[c])     throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんが作業中です');
@@ -782,6 +789,9 @@ function clockFinish(room, staff, task, at) {
     if (!x) throw new Error(room + ' はまだ開始されていません');
     const v = x.v;
 
+    // 送り直しは、自分の入室に続く退出のときだけ付ける（断られた入室のあと、別の人の作業を完了にしない）
+    if (w.replay && v[c] && !samePerson_(v[c - 1], staff))
+      throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんの作業です' + NOT_MINE_);
     if (w.replay && v[c + 1]) return rowToRoomRev_(date, v);   // 1回目が届いていた
     if (v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'はすでに完了しています');
     if (!v[c])    throw new Error(room + ' の' + taskName_(task) + 'はまだ開始されていません');
@@ -799,7 +809,7 @@ function clockFinish(room, staff, task, at) {
 }
 
 /** 完了を取り消して作業中に戻す。入室時刻は残す */
-function clockReopen(room, task, at) {
+function clockReopen(room, task, at, staff) {
   return withLock_(() => {
     const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
@@ -814,6 +824,8 @@ function clockReopen(room, task, at) {
       if (w.replay) return rowToRoomRev_(date, v);   // 1回目が届いていた
       throw new Error(room + ' の' + taskName_(task) + 'はまだ完了していません');
     }
+    if (w.replay && !samePerson_(v[c - 1], staff))
+      throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんの作業です' + NOT_MINE_);
     if (w.replay && new Date(v[c + 1]) > w.time) throw new Error(room + ' の' + taskName_(task) + 'は、取り消しを押したあとに退出し直されています');
     v[c + 1] = ''; v[c + 2] = '';
     return writeRoomRow_(sh, date, x);
@@ -821,7 +833,7 @@ function clockReopen(room, task, at) {
 }
 
 /** 入室前に戻す。担当者と時刻をすべて消す */
-function clockUndo(room, task, at) {
+function clockUndo(room, task, at, staff) {
   return withLock_(() => {
     const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
@@ -834,6 +846,8 @@ function clockUndo(room, task, at) {
     }
     if (w.replay) {
       if (!v[c]) return rowToRoomRev_(date, v);   // 1回目が届いていた
+      if (!samePerson_(v[c - 1], staff))
+        throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんの作業です' + NOT_MINE_);
       // 押したあとに入った入室（断られたあと別の人が入った等）は消さない
       if (new Date(v[c]) > w.time) throw new Error(room + ' の' + taskName_(task) + 'は、取り消しを押したあとに入室し直されています');
     }
@@ -858,7 +872,9 @@ function clockOnce(room, staff, task, at) {
     const v = x.v;
     const word = task === 'clean' ? 'セット済' : '確認済';
 
-    if (w.replay && v[c + 1] && String(v[c - 1]) === String(staff)) return rowToRoomRev_(date, v);   // 1回目が届いていた
+    if (w.replay && v[c + 1] && samePerson_(v[c - 1], staff)) return rowToRoomRev_(date, v);   // 1回目が届いていた
+    if (w.replay && v[c] && !v[c + 1] && (!samePerson_(v[c - 1], staff) || w.time < new Date(v[c])))
+      throw new Error(room + ' は ' + v[c - 1] + ' さんが入室中です' + NOT_MINE_);
     if (task === 'check' && !v[TASK_COL.clean + 1]) throw new Error(room + ' はまだDDセットが済んでいません');
     if (v[c + 1]) throw new Error(room + ' は ' + v[c - 1] + ' さんが' + word + 'です');
 
@@ -882,7 +898,7 @@ function clockOnce(room, staff, task, at) {
  */
 function setRoomCode(rooms, code, at) {
   return withLock_(() => {
-    const date = when_(at).date, sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const list = (Array.isArray(rooms) ? rooms : [rooms]).map(String);
     const c = String(code || '').toUpperCase();
     if (IND_CODES.indexOf(c) < 0) throw new Error('不明なコードです: ' + code);
@@ -890,6 +906,8 @@ function setRoomCode(rooms, code, at) {
     list.forEach(room => {
       const row = findLogRow_(sh, date, room);
       if (!row) return;
+      // 送り直しの「アウト前に戻す」は、その間に清掃に入った部屋（入室でOになった）には効かせない
+      if (w.replay && c === 'D' && sh.getRange(row, TASK_COL.clean + 1).getValue()) return;
       const full = bool_(sh.getRange(row, 21).getValue());
       sh.getRange(row, 4, 1, 2).setValues([[c, kbnOf_(c, full)]]);
     });
@@ -932,12 +950,18 @@ function putFlag_(v, k, val) {
  * パッチを行に当てる。
  * 回収（ゴミ・バッグ）は押した人と時刻を残す。外したら記録も確認も消す。
  */
-function applyPatch_(v, patch, time) {
+function applyPatch_(v, patch0, time, replay) {
+  const patch = Object.assign({}, patch0);
   const by = String(patch.__by || '').trim();
   ['pickup', 'bag'].forEach(k => {
     if (!(k in patch)) return;
+    const stamp = String(v[COLLECT_COL[k] - 1] || '').trim();
     // 送り直しで同じ回収がもう入っていれば、最初の人と時刻のまま
-    if (patch[k] && String(v[COLLECT_COL[k] - 1] || '').trim()) return;
+    if (patch[k] && stamp) return;
+    // 送り直しの「外す」は、自分が付けた回収だけ外す（そのあと別の人が付けた回収と確認を消さない）
+    if (!patch[k] && replay && by && stamp && !samePerson_(stamp.replace(/\s*\d{1,2}:\d{2}$/, ''), by)) {
+      delete patch[k]; return;
+    }
     v[COLLECT_COL[k] - 1] = patch[k] ? (by + ' ' + hm_(time || new Date())).trim() : '';
     if (!patch[k]) v[COLLECT_COL.check - 1] = '';
   });
@@ -955,7 +979,7 @@ function setRoomFlag1(room, patch, at) {
     if (!x) return null;
     // 特別清掃を押したら、月の残りを読み直す
     if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));
-    applyPatch_(x.v, patch, w.time);
+    applyPatch_(x.v, patch, w.time, w.replay);
     return writeRoomRow_(sh, date, x);
   });
 }
@@ -982,7 +1006,7 @@ function setRoomFlags(rooms, patch, at) {
     (Array.isArray(rooms) ? rooms : [rooms]).map(String).forEach(room => {
       const x = readRoomRow_(sh, date, room);
       if (!x) return;
-      applyPatch_(x.v, patch, w.time);
+      applyPatch_(x.v, patch, w.time, w.replay);
       sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
     });
     bumpRev_(date);
@@ -1235,6 +1259,87 @@ function getSummary_(dateStr) {
   return { date: date, staff: shape(byStaff), kbn: shape(byKbn), people: people_(list) };
 }
 
+/*************************************************
+ * 清掃員のアベレージ（管理画面・見るだけ）
+ *  清掃とチェックを、アウト・ステイ・フルメイクで分けて1室あたりの時間を出す。
+ *  DDの部屋（DDセット・DD確認）は時間が0分なので平均に入れず、部屋数だけ数える。
+ *  区分がアウト・ステイ・フル以外の部屋も、平均に入れず部屋数と出勤日だけ数える。
+ *  75分（AVG_LIMIT_MIN）を超える記録は押し忘れとみなして平均から外し、件数を出す（部屋数・1日あたりには入れる）。
+ *************************************************/
+const AVG_LIMIT_MIN = 75;
+const AVG_KBN = ['OUT', 'STAY', 'FULL'];
+
+function getStaffAverages_(from, to) {
+  const ss = ss_();
+  // 打刻ログは KEEP_MONTHS か月ぶんだけ。それより前を見るときは保管シートも読む
+  const rows = [];
+  const read = sh => {
+    if (!sh || sh.getLastRow() < 2) return;
+    sh.getRange(2, 1, sh.getLastRow() - 1, 21).getValues().forEach(r => rows.push(r));
+  };
+  read(ss.getSheetByName(SHEET.LOG));
+  if (!from || from < keepFrom_()) read(ss.getSheetByName(SHEET.ARCHIVE));
+
+  const blank = () => ({ n: 0, sum: 0, min: null, max: null, ex: 0 });
+  const add = (o, min) => {
+    if (min > AVG_LIMIT_MIN) { o.ex++; return; }
+    o.n++; o.sum += min;
+    if (o.min === null || min < o.min) o.min = min;
+    if (o.max === null || min > o.max) o.max = min;
+  };
+  const box = () => { const o = {}; AVG_KBN.forEach(k => { o[k] = blank(); }); return o; };
+  const team = { clean: box(), check: box() };
+  const people = {}, days = {}, seen = {};
+  // 空白の違い（全角・2つ続き）だけの名前は1人にまとめる
+  const nm = v => String(v || '').replace(/[\s　]+/g, ' ').trim() || '不明';
+  const P = name => people[name] || (people[name] = {
+    name: name, days: {}, clean: box(), check: box(),
+    cleanOther: 0, checkOther: 0, ddSet: 0, ddCheck: 0
+  });
+
+  rows.forEach(r => {
+    const d = normDate_(r[0]), room = String(r[1] || '').trim();
+    if (!room || (from && d < from) || (to && d > to)) return;
+    // 保管へ移す途中で止まったときなど、同じ日・同じ部屋が2行あっても1回だけ数える
+    if (seen[d + '|' + room]) return;
+    seen[d + '|' + room] = 1;
+    const kbn = String(r[4] || '').trim(), dd = bool_(r[17]);
+    // c は入室の列（rowToRoom_ と同じ並び：担当 c-1・入室 c・退出 c+1・分 c+2）
+    [['clean', 10], ['check', 14]].forEach(([task, c]) => {
+      if (!r[c] || !r[c + 1]) return;          // 入室と退出がそろった部屋だけ
+      const p = P(nm(r[c - 1])), min = Number(r[c + 2]) || 0;
+      p.days[d] = 1; days[d] = 1;
+      if (dd) { p[task === 'clean' ? 'ddSet' : 'ddCheck']++; return; }
+      if (AVG_KBN.indexOf(kbn) < 0) { p[task + 'Other']++; return; }
+      add(p[task][kbn], min); add(team[task][kbn], min);
+    });
+  });
+
+  const fin = o => ({ n: o.n, avg: o.n ? Math.round(o.sum / o.n * 10) / 10 : null, min: o.min, max: o.max, ex: o.ex });
+  const finBox = b => { const o = {}; AVG_KBN.forEach(k => { o[k] = fin(b[k]); }); return o; };
+  const done = (b, other) => AVG_KBN.reduce((a, k) => a + b[k].n + b[k].ex, 0) + other;
+  const staff = Object.keys(people).map(name => {
+    const p = people[name], dn = Object.keys(p.days).length;
+    const cleanDone = done(p.clean, p.cleanOther), checkDone = done(p.check, p.checkOther);
+    const per = v => dn && v ? Math.round(v / dn * 10) / 10 : null;   // やっていない作業は出さない
+    return {
+      name: name, days: dn, clean: finBox(p.clean), check: finBox(p.check),
+      cleanDone: cleanDone, checkDone: checkDone, ddSet: p.ddSet, ddCheck: p.ddCheck,
+      cleanPerDay: per(cleanDone), checkPerDay: per(checkDone),
+      ex: AVG_KBN.reduce((a, k) => a + p.clean[k].ex + p.check[k].ex, 0)
+    };
+  }).sort((a, b) => (b.cleanDone + b.checkDone + b.ddSet + b.ddCheck) - (a.cleanDone + a.checkDone + a.ddSet + a.ddCheck));
+
+  // 全体の1人1日あたりは、その作業をした人の出勤日だけで割る
+  const perAll = key => {
+    const who = staff.filter(p => p[key + 'Done'] > 0), dn = who.reduce((a, p) => a + p.days, 0);
+    return dn ? Math.round(who.reduce((a, p) => a + p[key + 'Done'], 0) / dn * 10) / 10 : null;
+  };
+  return { from: from || '', to: to || '', limit: AVG_LIMIT_MIN, days: Object.keys(days).length,
+           perDay: { clean: perAll('clean'), check: perAll('check') },
+           team: { clean: finBox(team.clean), check: finBox(team.check) }, staff: staff };
+}
+
 /** ホテルへ出す申告文 */
 function getDeclarationText_(dateStr) {
   const date = dateStr || today_();
@@ -1466,7 +1571,7 @@ const MANUAL_ROWS = [];
 const ROYAL_SET = ['新規', '継続', '常設'];
 
 /** 日報（＋責任者業務日報）を作る。重いので同時に2つは走らせない */
-function buildDailyReport_(dateStr) {
+function buildDailyReportGuarded_(dateStr) {
   return busyGuard_('busy:daily', () => buildDailyReport_(dateStr));
 }
 
@@ -2036,7 +2141,7 @@ function zen_(s) {
 }
 
 /** フロアレポート（全階＋PDF）を作る。重いので同時に2つは走らせない */
-function buildFloorReport_(dateStr) {
+function buildFloorReportGuarded_(dateStr) {
   return busyGuard_('busy:floor', () => buildFloorReport_(dateStr));
 }
 
@@ -2987,12 +3092,13 @@ function getRoomAdmin(pin, ...a) { needAdmin_(pin); return getRoomAdmin_(...a); 
 function setRoomAdmin(pin, ...a) { needAdmin_(pin); return setRoomAdmin_(...a); }
 function getReport(pin, ...a) { needAdmin_(pin); return getReport_(...a); }
 function getSummary(pin, ...a) { needAdmin_(pin); return getSummary_(...a); }
+function getStaffAverages(pin, ...a) { needAdmin_(pin); return getStaffAverages_(...a); }
 function getSpecial(pin, ...a) { needAdmin_(pin); return getSpecial_(...a); }
 function getStale(pin, ...a) { needAdmin_(pin); return getStale_(...a); }
 function setSpecialNames(pin, ...a) { needAdmin_(pin); return setSpecialNames_(...a); }
 function buildSpecialSheet(pin, ...a) { needAdmin_(pin); return buildSpecialSheet_(...a); }
-function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReport_(...a); }
-function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReport_(...a); }
+function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReportGuarded_(...a); }
+function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReportGuarded_(...a); }
 function buildManagerReport(pin, ...a) { needAdmin_(pin); return buildManagerReport_(...a); }
 function getDeclarationText(pin, ...a) { needAdmin_(pin); return getDeclarationText_(...a); }
 function readIndicator(pin, ...a) { needAdmin_(pin); return readIndicator_(...a); }

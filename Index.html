@@ -1170,8 +1170,8 @@ function send(op, replay, ok, bad){
       case 'start':   g.clockStart(op.room, op.staff, op.task, ...A); break;
       case 'finish':  g.clockFinish(op.room, op.staff, op.task, ...A); break;
       case 'once':    g.clockOnce(op.room, op.staff, op.task, ...A); break;
-      case 'undo':    g.clockUndo(op.room, op.task, ...A); break;
-      case 'reopen':  g.clockReopen(op.room, op.task, ...A); break;
+      case 'undo':    g.clockUndo(op.room, op.task, ...A, ...(replay ? [op.staff] : [])); break;
+      case 'reopen':  g.clockReopen(op.room, op.task, ...A, ...(replay ? [op.staff] : [])); break;
       case 'flag1':   g.setRoomFlag1(op.room, op.patch, ...A); break;
       case 'flags':   g.setRoomFlags(op.rooms, op.patch, ...A); break;
       case 'code':    g.setRoomCode(op.rooms, op.code, ...A); break;
@@ -1185,6 +1185,7 @@ function send(op, replay, ok, bad){
   }
 }
 
+const CLOCK_KINDS = ['start', 'finish', 'once', 'undo', 'reopen'];
 function enqueue(op){ OUTBOX.push(op); saveBox(); }
 
 /** 読み直した盤面に、まだ送れていない操作を重ねる（重ねないと押す前の状態に戻って見える） */
@@ -1233,6 +1234,14 @@ function flush(){
     OUTBOX.shift();
     const rooms = (op.rooms || [op.room]).join('・');
     DROPPED.push({ room: rooms, what: opLabel(op), hm: hmOf(op.at), msg: e.message || '' });
+    // 入室などが断られたら、同じ部屋・同じ作業のあとの操作（退出・取り消しなど）も送らない（別の人の作業に付けない）
+    if (CLOCK_KINDS.indexOf(op.kind) >= 0) {
+      OUTBOX = OUTBOX.filter(x => {
+        if (CLOCK_KINDS.indexOf(x.kind) < 0 || x.room !== op.room || x.task !== op.task) return true;
+        DROPPED.push({ room: x.room, what: opLabel(x), hm: hmOf(x.at), msg: t('qChain') });
+        return false;
+      });
+    }
     saveBox();
     toast(t('qDropped', { r: rooms, m: e.message || '' }));
     next();
@@ -1242,7 +1251,8 @@ function flushNow(){ if (FLUSHING) return; flush(); }
 
 function opLabel(op){
   if (op.kind === 'flag1' || op.kind === 'flags')
-    return Object.keys(op.patch).filter(k => k !== '__by').map(k => t(k) || k).join('・');
+    return Object.keys(op.patch).filter(k => k !== '__by')
+      .map(k => k === 'dd' ? 'DD' : k === 'skip' ? t('skipOn') : k === 'memo' ? t('qMemo') : t(k)).join('・');
   if (op.kind === 'code') return op.code === 'O' ? t('outDone') : t('outBefore');
   if (op.kind === 'time') return t('setDue') + ' ' + (op.value || '—');
   if (op.kind === 'collect') return t('confirmBtn');

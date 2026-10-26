@@ -103,6 +103,58 @@
   .edf .er input[type=checkbox]{width:22px;height:22px}
   .edf .btn{margin-top:12px}
   .rvbtn{border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12.5px;background:var(--surface)}
+  /* 清掃員のアベレージ */
+  .seg{display:flex;background:rgba(118,118,128,.12);border-radius:10px;padding:2px;margin:4px 0 6px}
+  .seg button{flex:1;font-size:14px;font-weight:500;padding:7px 0;border-radius:8px;transition:background .2s,box-shadow .2s}
+  .seg button.on{background:var(--surface);font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 .5px 1px rgba(0,0,0,.08)}
+  .avgrange{font-size:12.5px;color:var(--muted);text-align:center;margin-bottom:12px}
+  .tgl{font-size:12px;font-weight:700;color:var(--muted);margin:0 0 5px 2px}
+  .teamgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+  .tt{background:rgba(118,118,128,.08);border-radius:14px;padding:10px 10px}
+  .tt .l{font-size:12px;color:var(--muted);font-weight:600}
+  .tt .v{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+  .tt .v small{font-size:13px;font-weight:600;color:var(--muted);margin-left:1px}
+  .tt .n{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .tt.OUT{box-shadow:inset 0 3px 0 #E08575}.tt.STAY{box-shadow:inset 0 3px 0 #D4C24A}.tt.FULL{box-shadow:inset 0 3px 0 #8E5BA8}
+  .pr{border-radius:16px;background:rgba(118,118,128,.08);margin-bottom:8px;overflow:hidden}
+  .pr .ph{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 12px 8px}
+  .pr .av{flex:0 0 34px;height:34px;border-radius:17px;background:#14213D;color:#fff;display:flex;align-items:center;
+          justify-content:center;font-size:14px;font-weight:700}
+  .pr .pw{flex:1;min-width:0}
+  .pr .pw b{display:block;font-size:15.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pr .pw span{font-size:12px;color:var(--muted)}
+  .pr .chev{color:var(--muted);transition:transform .25s}
+  .pr.open .chev{transform:rotate(90deg)}
+  .pr .ml{font-size:11.5px;font-weight:700;color:var(--muted);padding:0 14px 3px}
+  .pr .ms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:0 12px 10px}
+  .m{background:var(--surface);border-radius:11px;padding:8px 8px 9px}
+  .m .l{font-size:11px;color:var(--muted);font-weight:600}
+  .m .v{font-size:18px;font-weight:700;letter-spacing:-.015em;font-variant-numeric:tabular-nums;margin-top:1px}
+  .m .v small{font-size:11px;color:var(--muted);font-weight:600}
+  .m.few .v{color:var(--muted)}
+  .m .dl{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 6px;margin-top:3px;font-variant-numeric:tabular-nums}
+  .dl.fast{background:rgba(52,199,89,.14);color:#1D7A34}.dl.slow{background:rgba(255,149,0,.16);color:#B35A00}
+  .dl.even{background:rgba(118,118,128,.1);color:var(--muted)}
+  .abar{position:relative;height:5px;border-radius:3px;background:rgba(118,118,128,.14);margin-top:7px}
+  .abar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+  .abar u{position:absolute;top:-3px;bottom:-3px;width:2px;border-radius:1px;background:var(--ink);opacity:.55}
+  .m.OUT .abar i{background:#E08575}.m.STAY .abar i{background:#D4C24A}.m.FULL .abar i{background:#8E5BA8}
+  .pr .more{display:none;padding:0 12px 12px}
+  .pr.open .more{display:block}
+  .more table{font-size:13px;background:var(--surface);border-radius:11px;overflow:hidden}
+  .more td,.more th{padding:7px 9px}
+  .more td.r{color:var(--muted);font-size:12px}
+  .pr .exb{flex:0 0 auto;font-size:11px;font-weight:700;color:#9B1C1C;background:rgba(255,59,48,.1);border-radius:999px;padding:2px 7px}
+  .more .exw{margin-top:8px;font-size:12.5px;color:#9B1C1C;background:rgba(255,59,48,.07);border-radius:10px;padding:8px 10px}
+  .perday{display:flex;gap:8px;margin:0 0 14px}
+  .perday div{flex:1;background:rgba(118,118,128,.08);border-radius:12px;padding:9px 11px;font-size:12.5px;color:var(--muted);font-weight:600}
+  .perday b{display:block;font-size:19px;color:var(--ink);letter-spacing:-.015em;font-variant-numeric:tabular-nums;margin-top:1px}
+  .perday b small{font-size:12px;color:var(--muted);font-weight:600;margin-left:1px}
+  .pr .pd{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px}
+  .pr .pd span{font-size:12px;font-weight:600;background:var(--surface);border-radius:999px;padding:4px 10px;font-variant-numeric:tabular-nums}
+  .pr .pd span em{font-style:normal;color:var(--muted);font-weight:500;margin-right:3px}
+  .pr .pd .up{color:#1D7A34}.pr .pd .dn{color:#B35A00}
+  .avgempty{color:var(--muted);text-align:center;padding:18px 0;font-size:14px}
 </style>
 </head>
 <body>
@@ -276,6 +328,22 @@
     <h2>区分別</h2>
     <table><thead><tr><th>区分</th><th class="n">室数</th><th class="n">合計</th>
       <th class="n">平均</th></tr></thead><tbody id="sumKbn"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>清掃員のアベレージ</h2>
+    <p class="hint">退出まで押した部屋の1室あたりの時間です。清掃とチェックを、アウト・ステイ・フルメイクで分けています。DDセット・DD確認は部屋数だけ数えます。75分を超える記録は押し忘れとみなして平均から外します。名前を押すと内訳が出ます。</p>
+    <div class="seg" id="avgSeg">
+      <button data-r="day" class="on" onclick="setAvgRange('day')">その日</button>
+      <button data-r="month" onclick="setAvgRange('month')">今月</button>
+      <button data-r="last" onclick="setAvgRange('last')">先月</button>
+      <button data-r="d30" onclick="setAvgRange('d30')">30日</button>
+      <button data-r="m3" onclick="setAvgRange('m3')">3か月</button>
+    </div>
+    <div class="avgrange" id="avgRange"></div>
+    <div id="avgTeam"></div>
+    <div class="perday" id="avgPerDay"></div>
+    <div id="avgList"><div class="avgempty"><span class="spin"></span></div></div>
   </div>
 
 </div>
@@ -786,6 +854,7 @@ $('edRoom').addEventListener('keydown', e=>{ if (e.key === 'Enter') loadRoom(); 
 /* ---------- 集計 ---------- */
 function refresh(){
   const d = $('date').value;
+  if (!AVG_KEY) loadAvg();
   adminRun().withSuccessHandler(r=>{
     const f = r.floors.map(x=>'<tr><td>'+esc(x.floor)+'</td><td class="n">'+x.out+'</td>'
       +'<td class="n">'+x.stay+'</td><td class="n">'+x.full+'</td><td class="n">'+x.total+'</td>'
@@ -988,7 +1057,92 @@ function copyDecl(){
   else fb();
 }
 
-$('date').addEventListener('change', ()=>{ $('hdrDate').textContent=$('date').value; refresh(); });
+/* ---------- 清掃員のアベレージ ---------- */
+let AVG_R = 'day', AVG_OPEN = {}, AVG_KEY = '';
+const AK = ['OUT', 'STAY', 'FULL'], AKN = { OUT: 'アウト', STAY: 'ステイ', FULL: 'フル' }, TN = { clean: '清掃', check: 'チェック' };
+function avgDates(r){
+  const d = new Date(), p = n => String(n).padStart(2,'0'), f = x => x.getFullYear() + '-' + p(x.getMonth()+1) + '-' + p(x.getDate());
+  if (r === 'day')  { const v = $('date').value || f(d); return [v, v]; }   // 上の日付の日
+  if (r === 'last') return [f(new Date(d.getFullYear(), d.getMonth()-1, 1)), f(new Date(d.getFullYear(), d.getMonth(), 0))];
+  if (r === 'd30')  return [f(new Date(d.getFullYear(), d.getMonth(), d.getDate()-29)), f(d)];
+  if (r === 'm3')   return [f(new Date(d.getFullYear(), d.getMonth()-2, 1)), f(d)];
+  return [f(new Date(d.getFullYear(), d.getMonth(), 1)), f(d)];
+}
+function setAvgRange(r){
+  AVG_R = r;
+  document.querySelectorAll('#avgSeg button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
+  loadAvg();
+}
+function loadAvg(){
+  const [f, t] = avgDates(AVG_R), key = f + '|' + t;
+  AVG_KEY = key;
+  $('avgRange').textContent = f === t ? f.replace(/-/g,'/') + ' の1日' : f.replace(/-/g,'/') + ' 〜 ' + t.replace(/-/g,'/');
+  $('avgList').innerHTML = '<div class="avgempty"><span class="spin"></span></div>';
+  adminRun().withSuccessHandler(a => { if (AVG_KEY === key) drawAvg(a); })
+    .withFailureHandler(e => { $('avgList').innerHTML = '<div class="avgempty">読み込めませんでした。' + esc(e.message || '') + '</div>'; })
+    .getStaffAverages(f, t);
+}
+function minTxt(v){ return v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1); }
+function drawAvg(a){
+  const T = a.team, one = a.from && a.from === a.to;
+  const tiles = task => '<div class="tgl">' + TN[task] + '</div><div class="teamgrid">' + AK.map(k =>
+    '<div class="tt ' + k + '"><div class="l">' + AKN[k] + '</div><div class="v">' + minTxt(T[task][k].avg)
+    + '<small>分</small></div><div class="n">' + T[task][k].n + '室の平均</div></div>').join('') + '</div>';
+  $('avgTeam').innerHTML = tiles('clean') + tiles('check');
+  const PD = a.perDay || {}, lab = one ? '1人あたり' : '1人1日あたり';
+  $('avgPerDay').innerHTML = '<div>' + lab + ' 清掃<b>' + minTxt(PD.clean) + '<small>室</small></b></div>'
+    + '<div>' + lab + ' チェック<b>' + minTxt(PD.check) + '<small>室</small></b></div>';
+  if (!a.staff.length) { $('avgList').innerHTML = '<div class="avgempty">この期間に完了した記録はありません</div>'; return; }
+  // 棒の長さの目盛り：全員のいちばん長い平均に合わせる（最低40分）
+  const scale = Math.max(40, ...a.staff.flatMap(p => ['clean','check'].flatMap(t => AK.map(k => p[t][k].avg))).filter(v => v != null));
+  // 1日の部屋数は多いほど良いので、全体より多ければ緑、少なければオレンジ
+  const pdPill = (label, v, t) => {
+    if (v == null) return '';
+    const c = t == null || Math.abs(v - t) < 0.3 ? '' : (v > t ? ' class="up"' : ' class="dn"');
+    return '<span' + c + '><em>' + label + '</em>' + (one ? Math.round(v) + '室' : minTxt(v) + '室/日') + '</span>';
+  };
+  const metric = (p, task, k) => {
+    const o = p[task][k], t = T[task][k].avg;
+    if (!o.n) return '<div class="m ' + k + ' few"><div class="l">' + AKN[k] + '</div><div class="v">—</div></div>';
+    const few = o.n < 3, diff = t == null ? 0 : o.avg - t;
+    const dl = few ? '<span class="dl even">参考</span>'
+      : Math.abs(diff) < 0.5 ? '<span class="dl even">平均どおり</span>'
+      : '<span class="dl ' + (diff < 0 ? 'fast' : 'slow') + '">' + (diff < 0 ? '−' : '+') + minTxt(Math.abs(diff)) + '分</span>';
+    return '<div class="m ' + k + (few ? ' few' : '') + '"><div class="l">' + AKN[k] + ' <small>' + o.n + '室</small></div>'
+      + '<div class="v">' + minTxt(o.avg) + '<small>分</small></div>' + dl
+      + '<div class="abar"><i style="width:' + Math.min(100, o.avg / scale * 100) + '%"></i>'
+      + (t == null ? '' : '<u style="left:' + Math.min(100, t / scale * 100) + '%"></u>') + '</div></div>';
+  };
+  const block = (p, task) => p[task + 'Done']
+    ? '<div class="ml">' + TN[task] + '</div><div class="ms">' + AK.map(k => metric(p, task, k)).join('') + '</div>' : '';
+  $('avgList').innerHTML = a.staff.map((p, i) => {
+    const rows = ['clean','check'].flatMap(task => AK.filter(k => p[task][k].n).map(k => '<tr><td>' + TN[task] + '・' + AKN[k] + '</td>'
+      + '<td class="n">' + p[task][k].n + '室</td><td class="n">' + minTxt(p[task][k].avg) + '分</td>'
+      + '<td class="n r">' + p[task][k].min + '〜' + p[task][k].max + '</td></tr>')).join('');
+    const dd = (p.ddSet ? '<tr><td>DDセット</td><td class="n">' + p.ddSet + '室</td><td></td><td></td></tr>' : '')
+      + (p.ddCheck ? '<tr><td>DD確認</td><td class="n">' + p.ddCheck + '室</td><td></td><td></td></tr>' : '');
+    const sub = [p.cleanDone ? '清掃' + p.cleanDone + '室' : '', p.checkDone ? 'チェック' + p.checkDone + '室' : '',
+                 (p.ddSet + p.ddCheck) ? 'DD' + (p.ddSet + p.ddCheck) + '室' : ''].filter(Boolean).join('・');
+    return '<div class="pr' + (AVG_OPEN[p.name] ? ' open' : '') + '" data-i="' + i + '">'
+      + '<button class="ph" onclick="toggleAvg(this)"><span class="av">' + esc(String(p.name).trim().charAt(0)) + '</span>'
+      + '<span class="pw"><b>' + esc(p.name) + '</b><span>' + (one ? '' : p.days + '日　') + sub + '</span></span>'
+      + (p.ex ? '<span class="exb">押し忘れ? ' + p.ex + '</span>' : '') + '<span class="chev">›</span></button>'
+      + '<div class="pd">' + pdPill('清掃', p.cleanPerDay, PD.clean) + pdPill('チェック', p.checkPerDay, PD.check) + '</div>'
+      + block(p, 'clean') + block(p, 'check')
+      + '<div class="more"><table><thead><tr><th>作業・区分</th><th class="n">室数</th><th class="n">平均</th><th class="n">範囲</th></tr></thead>'
+      + '<tbody>' + rows + dd + (rows || dd ? '' : '<tr><td colspan="4">記録なし</td></tr>') + '</tbody></table>'
+      + (p.ex ? '<div class="exw">' + a.limit + '分を超えた記録が ' + p.ex + ' 件あり、平均から外しています（退出の押し忘れの可能性）。</div>' : '')
+      + '</div></div>';
+  }).join('');
+  $('avgList').dataset.names = JSON.stringify(a.staff.map(p => p.name));
+}
+function toggleAvg(btn){
+  const card = btn.closest('.pr'); card.classList.toggle('open');
+  const n = JSON.parse($('avgList').dataset.names || '[]')[Number(card.dataset.i)];
+  if (n) AVG_OPEN[n] = card.classList.contains('open');
+}
+
+$('date').addEventListener('change', ()=>{ $('hdrDate').textContent=$('date').value; refresh(); if (AVG_R === 'day') loadAvg(); });
 $('pin').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(); });
 </script>
 </body>
