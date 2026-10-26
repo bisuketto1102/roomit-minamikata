@@ -213,6 +213,15 @@
          padding:13px 16px;border-radius:9px;font-size:15px;opacity:0;transform:translateY(12px);
          transition:.2s;pointer-events:none}
   .toast.on{opacity:1;transform:none}
+  /* 送れていない操作（電波切れ）の印。黄色＝あとで送る、赤＝断られた */
+  .qrow{display:flex;gap:8px;margin-top:8px}
+  .qrow[hidden]{display:none}
+  .qpill{flex:1;min-height:40px;border-radius:12px;border:1.5px solid #E0B000;background:#FFF4CC;color:#6B5200;
+    font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+  .qpill.busy{opacity:.6}
+  .qpill.bad{flex:0 0 auto;padding:0 16px}
+  .qpill.bad{background:#FDE2E2;border-color:#D93025;color:#A50E0E}
+  .qpill[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -232,6 +241,11 @@
     <button class="modebtn" onclick="openOrd()"><span data-t="ordBtn">指示</span><span class="n" id="ordN" hidden></span></button>
     <button class="modebtn" onclick="openCollect()"><span data-t="collect">回収</span><span class="n" id="colN" hidden></span></button>
     <select id="langSel" class="modebtn" onchange="setLang(this.value)" aria-label="Language"></select>
+  </div>
+  <!-- 電波が切れて送れていない操作。あるときだけ出る -->
+  <div class="qrow" id="qRow" hidden>
+    <button class="qpill" id="qPill" onclick="flushNow()" hidden></button>
+    <button class="qpill bad" id="qDrop" onclick="showDropped()" hidden></button>
   </div>
   <div class="meter"><span class="m1" id="bar1"></span><span class="m2" id="bar2"></span></div>
   <div class="mywork" id="myWork"></div>
@@ -428,10 +442,13 @@ function loadSpNames(){
 }
 
 function render(b){
+  if (b.now) CLOCK_OFF = b.now - Date.now();
+  overlayOutbox(b);
   const same = BOARD.rooms.length === b.rooms.length
     && BOARD.rooms.every((r,i) => r.room === b.rooms[i].room)
     && b.rooms.length && $('c-' + b.rooms[0].room);
   BOARD = b;
+  if (OUTBOX.length) recount();
   syncStaff(b.staffList);
   updateCounts();
   $('empty').hidden = b.rooms.length > 0;
@@ -626,14 +643,19 @@ function bulkCode(code){
   });
   recount(); updateCounts(); rooms.forEach(paint);
 
-  busy = true;
   toast(t('selN', {n: rooms.length}) + '　' + word);
-  try {
-    google.script.run.withSuccessHandler(done).withFailureHandler(ng)
-      .setRoomCode(rooms, code);
-  } catch (err) {
-    ng({ message: t('failed') + '（画面を開き直してください）' });
-  }
+  sendBulk({ kind: 'code', rooms: rooms, code: code, at: srvNow() });
+}
+
+/** まとめて操作を送る。電波が無ければ端末に貯める（画面は変えたまま） */
+function sendBulk(op){
+  const later = () => { busy = false; SEL.clear(); syncBar(); BOARD.rooms.forEach(paintRoom); enqueue(op); };
+  if (OUTBOX.length) { later(); return; }
+  busy = true;
+  send(op, false, done, e => {
+    if (isNetErr(e)) { later(); toast(t('qSaved')); return; }
+    ng(e);
+  });
 }
 
 function bulkFlag(patch){
@@ -654,14 +676,8 @@ function bulkFlag(patch){
   });
   recount(); updateCounts(); rooms.forEach(paint);
 
-  busy = true;
   toast(t('selN', {n: rooms.length}) + '　' + word);
-  try {
-    google.script.run.withSuccessHandler(done).withFailureHandler(ng)
-      .setRoomFlags(rooms, send);
-  } catch (err) {
-    ng({ message: t('failed') + '（画面を開き直してください）' });
-  }
+  sendBulk({ kind: 'flags', rooms: rooms, patch: send, at: srvNow() });
 }
 
 function bulkDue(){
@@ -669,10 +685,13 @@ function bulkDue(){
   const tm = $('bulkTime').value;
   const rooms = Array.from(SEL);
   if (!confirm(t('cfBulk', {n: rooms.length, w: (tm || '—')}))) return;
-  busy = true;
+  rooms.forEach(room => {
+    const i = BOARD.rooms.map(x=>x.room).indexOf(room);
+    if (i >= 0) BOARD.rooms[i].dueIn = tm;
+  });
+  rooms.forEach(paint);
   toast(t('setDue'));
-  google.script.run.withSuccessHandler(done).withFailureHandler(ng)
-    .setRoomTime(rooms, 'dueIn', tm);
+  sendBulk({ kind: 'time', rooms: rooms, field: 'dueIn', value: tm, at: srvNow() });
 }
 
 function done(b){ busy=false; SEL.clear(); REV=b.rev; render(b); syncBar(); }
@@ -798,17 +817,18 @@ function diffMin(from){
   return Math.max(1, d.getHours()*60 + d.getMinutes() - (+m[1]*60 + +m[2]));
 }
 
-function predict(r, kind, task){
+function predict(r, kind, task, who, hm){
+  who = who || me(); hm = hm || nowHM();
   const c = JSON.parse(JSON.stringify(r));
   const t = c[task];
-  if (kind === 'start')  { t.staff = me(); t.start = nowHM(); t.finish=''; t.minutes=null; t.state='doing';
+  if (kind === 'start')  { t.staff = who; t.start = hm; t.finish=''; t.minutes=null; t.state='doing';
                            if (task === 'clean' && c.code === 'D') c.code = 'O'; }
-  if (kind === 'finish') { t.finish = nowHM(); t.minutes = diffMin(t.start); t.state='done'; }
+  if (kind === 'finish') { t.finish = hm; t.minutes = diffMin(t.start); t.state='done'; }
   if (kind === 'reopen') { t.finish = ''; t.minutes = null; t.state='doing'; }
   if (kind === 'undo')   { c[task] = {staff:'',start:'',finish:'',minutes:null,state:'todo'}; }
   // DDセット：1回押すだけ（入室していなければ今の時刻で入室と退出を同時に記録）。コードは変えない
-  if (kind === 'once')   { if (t.state === 'todo') { t.staff = me(); t.start = nowHM(); }
-                           t.finish = nowHM(); t.minutes = t.start === t.finish ? 0 : diffMin(t.start); t.state='done'; }
+  if (kind === 'once')   { if (t.state === 'todo') { t.staff = who; t.start = hm; }
+                           t.finish = hm; t.minutes = t.start === t.finish ? 0 : diffMin(t.start); t.state='done'; }
   return c;
 }
 
@@ -841,6 +861,7 @@ function act(kind, task){
   if (kind==='reopen' && !confirm(t('cfReopen', {r: CUR.room, t: nm}))) return;
 
   const room = CUR.room, staff = me(), before = CUR;
+  const op = { kind: kind, task: task, room: room, staff: staff, at: srvNow() };
   holdRoom(room);
   apply(room, predict(before, kind, task));
   toast(room+' '+nm+' '+(kind==='start'?t('enter'):kind==='finish'?t('exit')
@@ -849,16 +870,12 @@ function act(kind, task){
   const ok = o => { releaseRoom(room); if (o && o.__rev) REV = o.__rev; apply(room, o); };
   const bad = e => { releaseRoom(room); apply(room, before);
                      toast(e.message || t('failed')); };
-  try {
-    const g = google.script.run.withSuccessHandler(ok).withFailureHandler(bad);
-    if (kind==='start')  g.clockStart(room, staff, task);
-    if (kind==='finish') g.clockFinish(room, staff, task);
-    if (kind==='reopen') g.clockReopen(room, task);
-    if (kind==='undo')   g.clockUndo(room, task);
-    if (kind==='once')   g.clockOnce(room, staff, task);
-  } catch (err) {
-    bad({ message: t('failed') + '（画面を開き直してください）' });
-  }
+  // 先に貯まっている操作があれば、押した順を守るため後ろに並べる
+  if (OUTBOX.length) { releaseRoom(room); enqueue(op); return; }
+  send(op, false, ok, e => {
+    if (isNetErr(e)) { releaseRoom(room); enqueue(op); toast(t('qSaved')); return; }   // 画面はそのまま、あとで送る
+    bad(e);
+  });
 }
 
 function flip(key){
@@ -896,19 +913,14 @@ function releaseRoom(room){
 
 /** サーバー呼び出しを安全に投げる。呼べなかったら元に戻して知らせる */
 function sendFlag(room, patch, before){
-  try {
-    google.script.run
-      .withSuccessHandler(f => { releaseRoom(room); if (f) REV = f.__rev; applyOne_(room, f); })
-      .withFailureHandler(e => { releaseRoom(room);
-        if (before) applyOne_(room, before);
-        toast(e.message || t('failed')); load(); })
-      .setRoomFlag1(room, patch);
-  } catch (err) {
-    // 画面とサーバーの版がずれていると、ここで関数が無いと言われる
-    releaseRoom(room);
-    if (before) applyOne_(room, before);
-    toast(t('failed') + '（画面を開き直してください）');
-  }
+  const op = { kind: 'flag1', room: room, patch: patch, at: srvNow() };
+  if (OUTBOX.length) { releaseRoom(room); enqueue(op); return; }
+  send(op, false,
+    f => { releaseRoom(room); if (f) REV = f.__rev; applyOne_(room, f); },
+    e => { releaseRoom(room);
+      if (isNetErr(e)) { enqueue(op); toast(t('qSaved')); return; }
+      if (before) applyOne_(room, before);
+      toast(e.message || t('failed')); load(); });
 }
 
 /** 複数の項目をまとめて保存する */
@@ -1012,16 +1024,13 @@ function checkCollect(room, ok){
   const before = i >= 0 ? JSON.parse(JSON.stringify(BOARD.rooms[i])) : null;
   if (i >= 0) BOARD.rooms[i].collectOk = ok ? me() + ' ' + nowHM() : '';
   drawCollect();
-  try {
-    google.script.run
-      .withSuccessHandler(f => { if (f) { REV = f.__rev; applyOne_(room, f); } drawCollect(); })
-      .withFailureHandler(e => { if (before) applyOne_(room, before); drawCollect();
-        toast(e.message || t('failed')); })
-      .setCollectCheck(room, me(), ok);
-  } catch (err) {
-    if (before) applyOne_(room, before); drawCollect();
-    toast(t('failed') + '（画面を開き直してください）');
-  }
+  const op = { kind: 'collect', room: room, staff: me(), ok: ok, at: srvNow() };
+  if (OUTBOX.length) { enqueue(op); return; }
+  send(op, false,
+    f => { if (f) { REV = f.__rev; applyOne_(room, f); } drawCollect(); },
+    e => { if (isNetErr(e)) { enqueue(op); toast(t('qSaved')); return; }
+      if (before) applyOne_(room, before); drawCollect();
+      toast(e.message || t('failed')); });
 }
 
 function saveField2(patch){
@@ -1075,6 +1084,7 @@ function load(manual){
     .withSuccessHandler(b=>{
       LOADING=false; $('refBtn').classList.remove('busy');
       REV = b.rev; render(b);
+      if (OUTBOX.length) setTimeout(flush, 300);
       if (manual){ $('refBtn').classList.add('hit');
         setTimeout(()=>$('refBtn').classList.remove('hit'), 700); }
     })
@@ -1083,6 +1093,138 @@ function load(manual){
       toast(e.message || t('failed'));
     })
     .getBoard(null);
+}
+
+/* ---------- 電波が切れたときの送り直し ----------
+ * 送れなかった操作は端末に貯めて（閉じても消えない）、つながったら押した順に送る。
+ * 記録の時刻は「押した時刻」。サーバーの時計に合わせてから送る。
+ * サーバー側は、同じ人の同じ操作がもう入っていれば成功として扱う（二重記録しない）。
+ * 送ったが断られた操作（ほかの人が先に完了していた等）は赤い印で残して知らせる。 */
+let CLOCK_OFF = 0;                      // サーバー時刻 − 端末時刻（ミリ秒）
+let OUTBOX  = readJSON('outbox');
+let DROPPED = readJSON('dropped');
+let FLUSHING = false;
+function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+function readJSON(k){ try { const v = JSON.parse(store(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function saveBox(){ store('outbox', JSON.stringify(OUTBOX)); store('dropped', JSON.stringify(DROPPED)); drawOutbox(); }
+function srvNow(){ return Date.now() + CLOCK_OFF; }
+function hmOf(ms){ const d = new Date(ms), p = n => String(n).padStart(2,'0'); return p(d.getHours()) + ':' + p(d.getMinutes()); }
+function ymdOf(ms){ const d = new Date(ms), p = n => String(n).padStart(2,'0'); return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()); }
+
+/** 電波・通信の失敗か（＝あとで送り直せばいい失敗か）。サーバーが断った失敗は false */
+function isNetErr(e){
+  if (e && e.net) return true;
+  if (navigator.onLine === false) return true;
+  return /NetworkError|HTTP 0|Failed to fetch|network|timed? ?out|ネットワーク|接続|サーバー ?エラー|server error|Lock|ロック/i
+    .test(String((e && e.message) || e || ''));
+}
+
+/** サーバーへ送る。返事が来ないまま14秒たったら通信失敗とみなす（あとで送り直す） */
+function send(op, replay, ok, bad){
+  let settled = false;
+  const fin = (f, x) => { if (settled) return; settled = true; clearTimeout(tm); f(x); };
+  const tm = setTimeout(() => fin(bad, { net: true, message: 'timeout' }), 14000);
+  const A = replay ? [op.at] : [];
+  try {
+    const g = google.script.run.withSuccessHandler(x => fin(ok, x)).withFailureHandler(e => fin(bad, e));
+    switch (op.kind) {
+      case 'start':   g.clockStart(op.room, op.staff, op.task, ...A); break;
+      case 'finish':  g.clockFinish(op.room, op.staff, op.task, ...A); break;
+      case 'once':    g.clockOnce(op.room, op.staff, op.task, ...A); break;
+      case 'undo':    g.clockUndo(op.room, op.task, ...A); break;
+      case 'reopen':  g.clockReopen(op.room, op.task, ...A); break;
+      case 'flag1':   g.setRoomFlag1(op.room, op.patch, ...A); break;
+      case 'flags':   g.setRoomFlags(op.rooms, op.patch, ...A); break;
+      case 'code':    g.setRoomCode(op.rooms, op.code, ...A); break;
+      case 'time':    g.setRoomTime(op.rooms, op.field, op.value, ...A); break;
+      case 'collect': g.setCollectCheck(op.room, op.staff, op.ok, ...A); break;
+      default: fin(bad, { message: 'unknown' });
+    }
+  } catch (err) {
+    // 画面とサーバーの版がずれていると、ここで関数が無いと言われる
+    fin(bad, { message: t('failed') + '（画面を開き直してください）' });
+  }
+}
+
+function enqueue(op){ OUTBOX.push(op); saveBox(); }
+
+/** 読み直した盤面に、まだ送れていない操作を重ねる（重ねないと押す前の状態に戻って見える） */
+function overlayOutbox(b){
+  OUTBOX.forEach(op => {
+    if (ymdOf(op.at) !== b.date) return;
+    (op.rooms || [op.room]).forEach(room => {
+      const i = b.rooms.map(x => x.room).indexOf(room);
+      if (i < 0) return;
+      const r = b.rooms[i];
+      if (op.kind === 'flag1' || op.kind === 'flags') {
+        Object.keys(op.patch).forEach(k => {
+          if (k === '__by') return;
+          r[k] = op.patch[k];
+          if (k === 'pickup' || k === 'bag') {
+            r[k + 'By'] = op.patch[k] ? ((op.patch.__by || '') + ' ' + hmOf(op.at)).trim() : '';
+            if (!op.patch[k]) r.collectOk = '';
+          }
+        });
+        return;
+      }
+      if (op.kind === 'code')    { r.code = op.code; return; }
+      if (op.kind === 'time')    { r[op.field] = op.value; return; }
+      if (op.kind === 'collect') { r.collectOk = op.ok ? (op.staff + ' ' + hmOf(op.at)) : ''; return; }
+      b.rooms[i] = predict(r, op.kind, op.task, op.staff, hmOf(op.at));
+    });
+  });
+}
+
+/** 貯めた操作を先頭から1つずつ送る */
+function flush(){
+  if (FLUSHING || !OUTBOX.length || navigator.onLine === false) return;
+  FLUSHING = true; drawOutbox();
+  const op = OUTBOX[0];
+  const next = () => {
+    FLUSHING = false;
+    if (OUTBOX.length) { flush(); return; }
+    drawOutbox(); load();
+  };
+  send(op, true, () => {
+    OUTBOX.shift(); saveBox();
+    if (!OUTBOX.length) toast(t('qSent'));
+    next();
+  }, e => {
+    if (isNetErr(e)) { FLUSHING = false; drawOutbox(); return; }   // まだつながらない。あとでまた送る
+    OUTBOX.shift();
+    const rooms = (op.rooms || [op.room]).join('・');
+    DROPPED.push({ room: rooms, what: opLabel(op), hm: hmOf(op.at), msg: e.message || '' });
+    saveBox();
+    toast(t('qDropped', { r: rooms, m: e.message || '' }));
+    next();
+  });
+}
+function flushNow(){ if (FLUSHING) return; flush(); }
+
+function opLabel(op){
+  if (op.kind === 'flag1' || op.kind === 'flags')
+    return Object.keys(op.patch).filter(k => k !== '__by').map(k => t(k) || k).join('・');
+  if (op.kind === 'code') return op.code === 'O' ? t('outDone') : t('outBefore');
+  if (op.kind === 'time') return t('setDue') + ' ' + (op.value || '—');
+  if (op.kind === 'collect') return t('confirmBtn');
+  const W = { start: t('enter'), finish: t('exit'), undo: t('undo'), reopen: t('reopen'),
+              once: t(op.task === 'clean' ? 'ddSetBtn' : 'ddOkBtn') };
+  return (op.task === 'check' ? t('check') : t('clean')) + ' ' + (W[op.kind] || op.kind);
+}
+function drawOutbox(){
+  const q = $('qPill'), d = $('qDrop');
+  if (!q || !d || !$('qRow')) return;
+  q.hidden = !OUTBOX.length;
+  q.textContent = t('qPending', { n: OUTBOX.length });
+  q.classList.toggle('busy', FLUSHING);
+  d.hidden = !DROPPED.length;
+  d.textContent = '! ' + DROPPED.length;
+  $('qRow').hidden = !OUTBOX.length && !DROPPED.length;
+}
+function showDropped(){
+  const lines = DROPPED.map(x => x.room + '　' + x.hm + '　' + x.what + (x.msg ? '\n　→ ' + x.msg : ''));
+  alert(t('qDropTitle') + '\n\n' + lines.join('\n'));
+  DROPPED = []; saveBox();
 }
 
 function checkRev(){
@@ -1103,6 +1245,9 @@ $('staff').addEventListener('change', e=>{
 });
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !PENDING.size) load(); });
 window.addEventListener('focus', checkRev);
+drawOutbox();
+window.addEventListener('online', flush);
+setInterval(flush, 15000);   // 送れていない操作の送り直し
 setInterval(checkRev, 7000);
 setInterval(()=>{ if(!document.hidden && !PENDING.size && !busy) load(); }, 120000);
 setInterval(()=>{ if(!document.hidden) BOARD.rooms.forEach(paintRoom); }, 20000);

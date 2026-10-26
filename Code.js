@@ -166,6 +166,21 @@ function ensureCols_(ss) {
 }
 
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'); }
+
+/**
+ * 電波が切れて端末に貯めた操作の送り直し用。at（押した時刻・サーバー時計に合わせたミリ秒）があれば、
+ * その時刻と日付で記録する。無ければ今。36時間より古いものは断る（前日の操作が今日に混ざらないように）。
+ * replay=true のときは「同じ人の同じ操作がもう入っていれば成功扱い」にする（二重記録しない）。
+ */
+function when_(at) {
+  const now = new Date();
+  if (at == null || at === '') return { date: today_(), time: now, replay: false };
+  let t = new Date(Number(at));
+  if (isNaN(t.getTime())) throw new Error('押した時刻が読めませんでした');
+  if (now - t > 36 * 3600 * 1000) throw new Error('時間がたちすぎた操作なので記録しませんでした。必要なら押し直してください');
+  if (t - now > 5 * 60 * 1000) t = now;   // 端末の時計が先に進みすぎている
+  return { date: Utilities.formatDate(t, 'Asia/Tokyo', 'yyyy-MM-dd'), time: t, replay: true };
+}
 function hm_(d)   { return d ? Utilities.formatDate(new Date(d), 'Asia/Tokyo', 'HH:mm') : ''; }
 
 function normDate_(v) {
@@ -565,6 +580,7 @@ function spTodo_(room, names, map, today) {
 
 function getBoard(dateStr) {
   const date = dateStr || today_();
+  const rev0 = getRev(date);   // 読む前に取る（読んでいる間に入った変更は、次の確認で読み直しになる）
   const sh = ss_().getSheetByName(SHEET.LOG);
   const list = dayBlock_(sh, date, NCOL)
     .filter(r => String(r[1]).trim())
@@ -579,7 +595,8 @@ function getBoard(dateStr) {
 
   return {
     date: date, rooms: list, staffList: getStaffList(),
-    rev: getRev(date), counts: countOf_(list)
+    rev: rev0, counts: countOf_(list),
+    now: new Date().getTime()   // 端末の時計のずれを直すため
   };
 }
 
@@ -675,6 +692,9 @@ function readRoomRow_(sh, date, room) {
 }
 
 /** 書き換えた行を1回で書き戻し、画面に返す形にする */
+/** 書かずに今の状態を返す（送り直しで1回目がもう入っていたとき） */
+function rowToRoomRev_(date, v) { const o = rowToRoom_(v); o.__rev = getRev(date); return o; }
+
 function writeRoomRow_(sh, date, x) {
   sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
   const out = rowToRoom_(x.v);
@@ -699,9 +719,9 @@ function appendAt_(sh, n) {
  *  入室 → 退出 の2打刻。清掃が終わるまでチェックには入れない
  *  どれも「行を1回読む → 手元で直す → 1回で書く」
  *************************************************/
-function clockStart(room, staff, task) {
+function clockStart(room, staff, task, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
     if (!c) throw new Error('不明な作業です');
 
@@ -709,21 +729,22 @@ function clockStart(room, staff, task) {
     if (!x) throw new Error(room + ' は本日の指示に入っていません');
     const v = x.v;
 
+    if (w.replay && v[c] && String(v[c - 1]) === String(staff)) return rowToRoomRev_(date, v);   // 1回目が届いていた
     if (task === 'check' && !v[TASK_COL.clean + 1]) throw new Error(room + ' はまだ清掃が終わっていません');
     if (v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんが完了済みです');
     if (v[c])     throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんが作業中です');
 
     v[c - 1] = staff;
-    v[c] = new Date();
+    v[c] = w.time;
     // 清掃に入れたということはお客様はもう出ている。アウト前(D)ならアウト済(O)にする
     if (task === 'clean' && String(v[3] || '').toUpperCase() === 'D') v[3] = 'O';
     return writeRoomRow_(sh, date, x);
   });
 }
 
-function clockFinish(room, staff, task) {
+function clockFinish(room, staff, task, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
     if (!c) throw new Error('不明な作業です');
 
@@ -731,10 +752,16 @@ function clockFinish(room, staff, task) {
     if (!x) throw new Error(room + ' はまだ開始されていません');
     const v = x.v;
 
+    if (w.replay && v[c + 1]) return rowToRoomRev_(date, v);   // 1回目が届いていた
     if (v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'はすでに完了しています');
     if (!v[c])    throw new Error(room + ' の' + taskName_(task) + 'はまだ開始されていません');
 
-    const end = new Date();
+    let end = w.time;
+    if (end < new Date(v[c])) {
+      // 送り直しで、押した時刻が今の入室より前：断られた別の入室に続く退出なので、今の作業には付けない
+      if (w.replay) throw new Error(room + ' の' + taskName_(task) + 'は、この退出を押したあとに別の人が入室しています');
+      end = new Date();
+    }
     v[c + 1] = end;
     v[c + 2] = Math.max(1, Math.round((end - new Date(v[c])) / 60000));
     return writeRoomRow_(sh, date, x);
@@ -742,9 +769,9 @@ function clockFinish(room, staff, task) {
 }
 
 /** 完了を取り消して作業中に戻す。入室時刻は残す */
-function clockReopen(room, task) {
+function clockReopen(room, task, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
     const x = readRoomRow_(sh, date, room);
     if (!x) throw new Error(room + ' の記録がありません');
@@ -753,16 +780,20 @@ function clockReopen(room, task) {
     if (task === 'clean' && v[TASK_COL.check]) {
       throw new Error(room + ' はチェックが始まっています。先にチェックを取り消してください');
     }
-    if (!v[c + 1]) throw new Error(room + ' の' + taskName_(task) + 'はまだ完了していません');
+    if (!v[c + 1]) {
+      if (w.replay) return rowToRoomRev_(date, v);   // 1回目が届いていた
+      throw new Error(room + ' の' + taskName_(task) + 'はまだ完了していません');
+    }
+    if (w.replay && new Date(v[c + 1]) > w.time) throw new Error(room + ' の' + taskName_(task) + 'は、取り消しを押したあとに退出し直されています');
     v[c + 1] = ''; v[c + 2] = '';
     return writeRoomRow_(sh, date, x);
   });
 }
 
 /** 入室前に戻す。担当者と時刻をすべて消す */
-function clockUndo(room, task) {
+function clockUndo(room, task, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
     const x = readRoomRow_(sh, date, room);
     if (!x) throw new Error(room + ' の記録がありません');
@@ -770,6 +801,11 @@ function clockUndo(room, task) {
 
     if (task === 'clean' && v[TASK_COL.check]) {
       throw new Error(room + ' はチェックが始まっています。先にチェックを取り消してください');
+    }
+    if (w.replay) {
+      if (!v[c]) return rowToRoomRev_(date, v);   // 1回目が届いていた
+      // 押したあとに入った入室（断られたあと別の人が入った等）は消さない
+      if (new Date(v[c]) > w.time) throw new Error(room + ' の' + taskName_(task) + 'は、取り消しを押したあとに入室し直されています');
     }
     v[c - 1] = ''; v[c] = ''; v[c + 1] = ''; v[c + 2] = '';
     return writeRoomRow_(sh, date, x);
@@ -781,9 +817,9 @@ function clockUndo(room, task) {
  * 入室だけ押してあった部屋（前のやり方）は、その入室時刻のまま退出を入れる。
  * DD の部屋はお客様が滞在中なので、コード（D/O）は変えない。
  */
-function clockOnce(room, staff, task) {
+function clockOnce(room, staff, task, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const c = TASK_COL[task];
     if (!c) throw new Error('不明な作業です');
 
@@ -792,10 +828,11 @@ function clockOnce(room, staff, task) {
     const v = x.v;
     const word = task === 'clean' ? 'セット済' : '確認済';
 
+    if (w.replay && v[c + 1] && String(v[c - 1]) === String(staff)) return rowToRoomRev_(date, v);   // 1回目が届いていた
     if (task === 'check' && !v[TASK_COL.clean + 1]) throw new Error(room + ' はまだDDセットが済んでいません');
     if (v[c + 1]) throw new Error(room + ' は ' + v[c - 1] + ' さんが' + word + 'です');
 
-    const now = new Date();
+    const now = w.time;
     const fresh = !v[c];
     if (fresh) { v[c - 1] = staff; v[c] = now; }
     v[c + 1] = now;
@@ -813,9 +850,9 @@ function clockOnce(room, staff, task) {
  * コードを書き換える（D → O のアウト済み反映が主用途）
  * 区分も一緒に作り直す。フル清掃ならステイは FULL に昇格する
  */
-function setRoomCode(rooms, code) {
+function setRoomCode(rooms, code, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const date = when_(at).date, sh = ss_().getSheetByName(SHEET.LOG);
     const list = (Array.isArray(rooms) ? rooms : [rooms]).map(String);
     const c = String(code || '').toUpperCase();
     if (IND_CODES.indexOf(c) < 0) throw new Error('不明なコードです: ' + code);
@@ -833,9 +870,9 @@ function setRoomCode(rooms, code) {
 }
 
 /** 締切・IN時刻をまとめて入れる */
-function setRoomTime(rooms, field, value) {
+function setRoomTime(rooms, field, value, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const date = when_(at).date, sh = ss_().getSheetByName(SHEET.LOG);
     const col = { dueIn: 7, checkIn: 8, lateOut: 9 }[field];
     if (!col) throw new Error('不明な項目です');
     const v = hhmm_(value);
@@ -865,11 +902,13 @@ function putFlag_(v, k, val) {
  * パッチを行に当てる。
  * 回収（ゴミ・バッグ）は押した人と時刻を残す。外したら記録も確認も消す。
  */
-function applyPatch_(v, patch) {
+function applyPatch_(v, patch, time) {
   const by = String(patch.__by || '').trim();
   ['pickup', 'bag'].forEach(k => {
     if (!(k in patch)) return;
-    v[COLLECT_COL[k] - 1] = patch[k] ? (by + ' ' + hm_(new Date())).trim() : '';
+    // 送り直しで同じ回収がもう入っていれば、最初の人と時刻のまま
+    if (patch[k] && String(v[COLLECT_COL[k] - 1] || '').trim()) return;
+    v[COLLECT_COL[k] - 1] = patch[k] ? (by + ' ' + hm_(time || new Date())).trim() : '';
     if (!patch[k]) v[COLLECT_COL.check - 1] = '';
   });
   Object.keys(FLAG_COL).forEach(k => { if (k in patch) putFlag_(v, k, patch[k]); });
@@ -879,14 +918,14 @@ function applyPatch_(v, patch) {
  * 1部屋・1回ぶんのフラグ保存（DD・清掃不要・ゴミ回収など1タップごとに呼ぶ操作）。
  * 行を1回読んで1回書くだけなので軽い。
  */
-function setRoomFlag1(room, patch) {
+function setRoomFlag1(room, patch, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const x = readRoomRow_(sh, date, String(room));
     if (!x) return null;
     // 特別清掃を押したら、月の残りを読み直す
     if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));
-    applyPatch_(x.v, patch);
+    applyPatch_(x.v, patch, w.time);
     return writeRoomRow_(sh, date, x);
   });
 }
@@ -895,24 +934,25 @@ function setRoomFlag1(room, patch) {
  * チェッカーが回収を確認する。確認した人と時刻を残す。
  * ok が false なら確認を取り消す。
  */
-function setCollectCheck(room, staff, ok) {
+function setCollectCheck(room, staff, ok, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const x = readRoomRow_(sh, date, String(room));
     if (!x) throw new Error(room + ' の記録がありません');
-    x.v[COLLECT_COL.check - 1] = ok ? (String(staff || '').trim() + ' ' + hm_(new Date())).trim() : '';
+    if (ok && w.replay && String(x.v[COLLECT_COL.check - 1] || '').trim()) return rowToRoomRev_(date, x.v);   // 1回目が届いていた
+    x.v[COLLECT_COL.check - 1] = ok ? (String(staff || '').trim() + ' ' + hm_(w.time)).trim() : '';
     return writeRoomRow_(sh, date, x);
   });
 }
 
-function setRoomFlags(rooms, patch) {
+function setRoomFlags(rooms, patch, at) {
   return withLock_(() => {
-    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));
     (Array.isArray(rooms) ? rooms : [rooms]).map(String).forEach(room => {
       const x = readRoomRow_(sh, date, room);
       if (!x) return;
-      applyPatch_(x.v, patch);
+      applyPatch_(x.v, patch, w.time);
       sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
     });
     bumpRev_(date);
