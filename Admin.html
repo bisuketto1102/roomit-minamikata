@@ -13,6 +13,16 @@
   header{background:var(--surface);border-bottom:1px solid var(--line);
          padding:16px;padding-top:calc(16px + env(safe-area-inset-top))}
   header h1{margin:0;font-size:19px;font-weight:600}
+  /* ロゴ：Roomit（紺の文字＋金の鍵の輪） */
+  .brand{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-weight:800;
+         letter-spacing:-.035em;color:#14213D;white-space:nowrap}
+  .brand .oo{display:inline-block;width:.97em;height:.58em;vertical-align:baseline;margin:0 .01em 0 .04em}
+  header h1 .brand{font-size:24px}
+  header h1 .role{font-size:13px;font-weight:600;color:var(--muted);margin-left:8px;padding:2px 8px;border-radius:999px;
+                  background:rgba(118,118,128,.08);vertical-align:3px}
+  .appicon{display:block;width:64px;height:64px;margin:0 auto 14px;filter:drop-shadow(0 6px 14px rgba(20,33,61,.28))}
+  .lockhead{text-align:center;margin:6px 0 18px}
+  .lockname{font-size:34px;line-height:1.1}
   header p{margin:2px 0 0;font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
   .wrap{padding:16px;max-width:900px;margin:0 auto}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}
@@ -99,8 +109,9 @@
 
 <div id="gate" class="wrap" style="padding-top:70px">
   <div class="card">
-    <h2>管理画面</h2>
-    <p class="hint">暗証番号を入力してください</p>
+    <div class="lockhead"><svg class="appicon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#14213D"/><path d="M24 14h16a4 4 0 0 1 4 4v18l-12 13-12-13V18a4 4 0 0 1 4-4z" fill="#E9B949"/><circle cx="32" cy="21" r="3.2" fill="#14213D"/><path d="M28 30v12M28 30h5a4 4 0 0 1 0 8h-5M33 38l4 4" fill="none" stroke="#14213D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="brand lockname">R<svg class="oo" viewBox="0 0 74 44" aria-hidden="true"><circle cx="21" cy="22" r="17" fill="none" stroke="currentColor" stroke-width="8.5"/><circle cx="52" cy="22" r="17" fill="none" stroke="#C9962B" stroke-width="8.5"/><path d="M37.5 13.5a17 17 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="8.5"/></svg>mit</div>
+      <p class="hint" style="margin:8px 0 0">管理画面　アパ南方<br>暗証番号を入力してください</p></div>
     <input id="pin" type="tel" inputmode="numeric" autocomplete="off"
            style="width:100%;padding:14px;border:1px solid var(--line);border-radius:8px;
                   font-size:22px;letter-spacing:.3em;text-align:center;background:var(--bg)">
@@ -110,7 +121,7 @@
 </div>
 
 <div id="app" hidden>
-<header><h1>客室清掃 管理　アパ南方</h1><p id="hdrDate"></p></header>
+<header><h1><span class="brand" aria-label="Roomit">R<svg class="oo" viewBox="0 0 74 44" aria-hidden="true"><circle cx="21" cy="22" r="17" fill="none" stroke="currentColor" stroke-width="8.5"/><circle cx="52" cy="22" r="17" fill="none" stroke="#C9962B" stroke-width="8.5"/><path d="M37.5 13.5a17 17 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="8.5"/></svg>mit</span><span class="role">管理　アパ南方</span></h1><p id="hdrDate"></p></header>
 <div class="wrap">
 
   <div class="card">

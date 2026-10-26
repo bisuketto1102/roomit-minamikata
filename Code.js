@@ -222,11 +222,41 @@ function include(name) {
 function doGet(e) {
   const page = (e && e.parameter && e.parameter.p) || 'staff';
   const file = page === 'admin' ? 'Admin' : page === 'test' ? 'Test' : 'Index';
-  return HtmlService.createTemplateFromFile(file)
+  const out = HtmlService.createTemplateFromFile(file)
     .evaluate()
-    .setTitle('客室清掃')
+    .setTitle(page === 'admin' ? 'Roomit 管理 南方' : 'Roomit 南方')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  // ホーム画面・タブのアイコン。失敗しても画面は普通に出す
+  try { const u = appIconUrl_(); if (u) out.setFaviconUrl(u); } catch (err) {}
+  return out;
+}
+
+/**
+ * アプリのアイコン（紺の角丸＋金の鍵タグ＋R。サウスと同じ絵）。180×180のPNG。
+ * GASエディタで setupAppIcon を1回実行すると、ドライブに置いて「リンクを知っている人は閲覧可」にし、IDを覚える。
+ * 画面を開くときは覚えたIDを読むだけ（無ければアイコンなしで普通に出す）。
+ * 絵を変えたら APP_ICON_VER を上げて setupAppIcon をもう一度。
+ * addMetaTag は使えるタグが限られる（apple-mobile-web-app-title はサウスで全画面が落ちた）。足さない。
+ */
+const APP_ICON_VER = '1';
+const APP_ICON_PNG = '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';
+function appIconUrl_() {
+  const id = props_().getProperty('APP_ICON_' + APP_ICON_VER);
+  return id ? 'https://drive.google.com/uc?export=view&id=' + id + '&format=png' : '';
+}
+function setupAppIcon() {
+  const key = 'APP_ICON_' + APP_ICON_VER;
+  if (!props_().getProperty(key)) {
+    const blob = Utilities.newBlob(Utilities.base64Decode(APP_ICON_PNG), 'image/png', 'Roomit南方_アイコン.png');
+    const f = DriveApp.createFile(blob);   // PDFの置き場に入れると古いPDFと一緒に消されるので別にする
+    f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    props_().setProperty(key, f.getId());
+  }
+  const u = appIconUrl_();
+  HtmlService.createHtmlOutput('').setFaviconUrl(u);   // URLが使えない形ならここで止まる
+  Logger.log('OK ' + u);
+  return u;
 }
 
 
