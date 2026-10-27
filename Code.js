@@ -884,6 +884,11 @@ function readRoomRow_(sh, date, room) {
   return { row: row, v: sh.getRange(row, 1, 1, NCOL).getValues()[0] };
 }
 
+/** 清掃員画面からの DD・清掃不要・回収・メモなどは、名前を選んでいないと入れない（誰が入れたかを残すため） */
+function needStaff_(name) {
+  if (!String(name == null ? '' : name).trim()) throw new Error('先に名前を選んでください');
+}
+
 /** 送り直しの操作が、この作業をしている人のものか（空白の違いは同じ人） */
 function samePerson_(a, b) {
   const k = v => String(v || '').replace(/[\s\u3000]+/g, ' ').trim();
@@ -1061,7 +1066,8 @@ function clockOnce(room, staff, task, at) {
  * コードを書き換える（D → O のアウト済み反映が主用途）
  * 区分も一緒に作り直す。フル清掃ならステイは FULL に昇格する
  */
-function setRoomCode(rooms, code, at) {
+function setRoomCode(rooms, code, at, staff) {
+  needStaff_(staff);
   return withLock_(() => {
     const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const list = (Array.isArray(rooms) ? rooms : [rooms]).map(String);
@@ -1083,7 +1089,8 @@ function setRoomCode(rooms, code, at) {
 }
 
 /** 締切・IN時刻をまとめて入れる */
-function setRoomTime(rooms, field, value, at) {
+function setRoomTime(rooms, field, value, at, staff) {
+  needStaff_(staff);
   return withLock_(() => {
     const date = when_(at).date, sh = ss_().getSheetByName(SHEET.LOG);
     const col = { dueIn: 7, checkIn: 8, lateOut: 9 }[field];
@@ -1140,6 +1147,7 @@ function applyPatch_(v, patch0, time, replay) {
  * 行を1回読んで1回書くだけなので軽い。
  */
 function setRoomFlag1(room, patch, at) {
+  needStaff_(patch && patch.__by);
   return withLock_(() => {
     const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     const x = readRoomRow_(sh, date, String(room));
@@ -1175,6 +1183,7 @@ function setCollectCheck(room, staff, ok, at) {
 }
 
 function setRoomFlags(rooms, patch, at) {
+  needStaff_(patch && patch.__by);
   return withLock_(() => {
     const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
     if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));

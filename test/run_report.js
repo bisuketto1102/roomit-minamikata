@@ -37,19 +37,19 @@ const full = B.rooms.find(r => r.kbn === 'FULL').room;
 const stay = B.rooms.filter(r => r.kbn === 'STAY' && !r.dd && !r.fullClean).map(r => r.room);
 console.log('■ 帳票の数え方（見直し2）');
 // フルの部屋が清掃不要→DD。DDセット・DD確認まで済んでも強制交換・実質に入れない
-A.setRoomFlag1(full, { skip: true });
+A.setRoomFlag1(full, { __by: 'テスト 係', skip: true });
 let r = A.getBoard(T).rooms.find(x => x.room === full); ok(r.dd && r.skip, full + ' 清掃不要でDDも立つ');
 A.clockOnce(full, '上井 勇輔', 'clean'); A.clockOnce(full, '川原 なつみ', 'check');
 // 清掃不要の部屋はDDを外せない
-r = A.setRoomFlag1(stay[0], { skip: true }); r = A.setRoomFlag1(stay[0], { dd: false }); ok(r.dd && r.skip, stay[0] + ' 清掃不要の間はDDを外せない');
-A.setRoomFlags([stay[1]], { skip: true }); A.setRoomFlags([stay[1]], { dd: false });
+r = A.setRoomFlag1(stay[0], { __by: 'テスト 係', skip: true }); r = A.setRoomFlag1(stay[0], { __by: 'テスト 係', dd: false }); ok(r.dd && r.skip, stay[0] + ' 清掃不要の間はDDを外せない');
+A.setRoomFlags([stay[1]], { __by: 'テスト 係', skip: true }); A.setRoomFlags([stay[1]], { __by: 'テスト 係', dd: false });
 ok(A.getBoard(T).rooms.find(x => x.room === stay[1]).dd, 'まとめての DD解除でも外れない');
 // メモ：消したら日報の備考からも消える
-A.setRoomFlag1(stay[2], { memo: '忘れ物あり' });
+A.setRoomFlag1(stay[2], { __by: 'テスト 係', memo: '忘れ物あり' });
 let d = A.buildDailyReport(T);
 const memoCells = () => { const sh = A.ss_().getSheetByName('日報'); return sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(x => String(x[0])); };
 ok(memoCells().some(x => x.indexOf(stay[2] + '　忘れ物あり') === 0), '備考に現場メモ');
-A.setRoomFlag1(stay[2], { memo: '' });
+A.setRoomFlag1(stay[2], { __by: 'テスト 係', memo: '' });
 d = A.buildDailyReport(T);
 ok(!memoCells().some(x => x.indexOf('忘れ物あり') >= 0), '現場メモを消したら備考からも消える');
 const dsh = A.ss_().getSheetByName('日報'), all = dsh.getRange(1, 1, 20, 18).getValues();

@@ -52,7 +52,7 @@ job(OUT[0], '川原 なつみ', 'check', 100, 5);
 job(OUT[1], '川原 なつみ', 'check', 90, 7);
 // DD：清掃不要→セット済（0分）は平均に入れない
 const st = B.rooms.find(x => x.kbn === 'STAY' && !x.fullClean && x.room !== STAY[0]).room;
-A.setRoomFlag1(st, { skip: true, dd: true });
+A.setRoomFlag1(st, { __by: 'テスト 係', skip: true, dd: true });
 A.clockOnce(st, '上井 勇輔', 'clean');
 
 const a = A.getStaffAverages_(T, T);

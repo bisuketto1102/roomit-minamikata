@@ -53,6 +53,9 @@ clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_
 - 中だけで使う関数は名前の最後に `_`。テストは `this[n] = this[n + '_']` で中身を直接呼ぶ。
 - メールアドレスを見る `Session` は使わない。
 
+## 名前が必須の操作
+- 清掃員画面の DD・清掃不要・回収・水・冷蔵庫・メモ・特別清掃・備品・アウト済/アウト前・締切は、名前を選んでいないと入れられない（誰が入れたかを残すため。サウスと同じ）。画面（`needName`）とサーバー（`needStaff_`：setRoomFlag1/setRoomFlags は `patch.__by`、setRoomCode/setRoomTime は4番目の staff）の両方で止める。管理画面の「部屋を直す」は暗証番号で守るので対象外。
+
 ## 電波が切れたときの送り直し
 - 清掃員画面の押す操作（入室・退出・DDセット/確認済・取り消し・DD/清掃不要/回収などのフラグ・アウト済・締切・回収の確認）は、送れなければ端末（localStorage `outbox`）に貯め、つながったら押した順に送る（15秒ごと・online・読み直しのあと）。14秒返事が無ければ通信失敗とみなす。
 - 送り直しは押した時刻（`getBoard` の `now` で端末の時計のずれを直した `at`）で記録する（`when_`）。36時間より古いものは断る、5分より先の時刻は今にする。

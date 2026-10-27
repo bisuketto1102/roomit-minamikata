@@ -932,6 +932,7 @@ function syncBar(){
 
 function bulkCode(code){
   if (!SEL.size || busy) return;
+  if (!needName()) return;
   // アウトの部屋だけが対象。ステイや空室を選んでいても触らない
   const rooms = Array.from(SEL).filter(no => {
     const r = BOARD.rooms.filter(x => x.room === no)[0];
@@ -948,7 +949,7 @@ function bulkCode(code){
   recount(); updateCounts(); rooms.forEach(paint);
 
   toast(t('selN', {n: rooms.length}) + '　' + word);
-  sendBulk({ kind: 'code', rooms: rooms, code: code, at: srvNow() });
+  sendBulk({ kind: 'code', rooms: rooms, code: code, staff: me(), at: srvNow() });
 }
 
 /** まとめて操作を送る。電波が無ければ端末に貯める（画面は変えたまま） */
@@ -964,6 +965,7 @@ function sendBulk(op){
 
 function bulkFlag(patch){
   if (!SEL.size || busy) return;
+  if (!needName()) return;
   const rooms = Array.from(SEL);
   const word = ('dd' in patch) ? (patch.dd ? t('ddOn') : t('ddOff'))
                                : (patch.skip ? t('skipOn') : t('skipOff'));
@@ -981,11 +983,13 @@ function bulkFlag(patch){
   recount(); updateCounts(); rooms.forEach(paint);
 
   toast(t('selN', {n: rooms.length}) + '　' + word);
+  send.__by = me();
   sendBulk({ kind: 'flags', rooms: rooms, patch: send, at: srvNow() });
 }
 
 function bulkDue(){
   if (!SEL.size || busy) return;
+  if (!needName()) return;
   const tm = $('bulkTime').value;
   const rooms = Array.from(SEL);
   if (!confirm(t('cfBulk', {n: rooms.length, w: (tm || '—')}))) return;
@@ -995,7 +999,7 @@ function bulkDue(){
   });
   rooms.forEach(paint);
   toast(t('setDue'));
-  sendBulk({ kind: 'time', rooms: rooms, field: 'dueIn', value: tm, at: srvNow() });
+  sendBulk({ kind: 'time', rooms: rooms, field: 'dueIn', value: tm, staff: me(), at: srvNow() });
 }
 
 function done(b){ busy=false; SEL.clear(); REV=b.rev; render(b); syncBar(); }
@@ -1182,8 +1186,16 @@ function act(kind, task){
   });
 }
 
+/** DD・清掃不要などの記録は、名前を選んでからでないと入れられない（誰が入れたかを残すため） */
+function needName(){
+  if (me()) return true;
+  toast(t('pickName')); $('staff').focus();
+  return false;
+}
+
 function flip(key){
   if (!CUR || PENDING.has(CUR.room)) return;
+  if (!needName()) return;
   // ゴミ回収・バッグ回収：押し間違いに備えて確認する。外すとチェッカーの確認も消える
   if (key === 'pickup' || key === 'bag') {
     if (!me()){ toast(t('pickName')); $('staff').focus(); return; }
@@ -1339,6 +1351,8 @@ function checkCollect(room, ok){
 
 function saveField2(patch){
   if (!CUR) return;
+  if (!needName()) { fillSheet(CUR); return; }
+  patch.__by = me();
   const room = CUR.room;
   const before = JSON.parse(JSON.stringify(CUR));
   holdRoom(room);
@@ -1350,8 +1364,10 @@ function saveField2(patch){
 
 function saveField(key, val){
   if (!CUR) return;
+  if (!needName()) { fillSheet(CUR); return; }   // 入れかけた欄（水・冷蔵庫・メモなど）は元に戻す
   const room = CUR.room, patch = {};
   patch[key] = val;
+  patch.__by = me();
   const before = JSON.parse(JSON.stringify(CUR));   // 失敗したときに戻す元（書き換える前に取る）
   // 回収は押した人と時刻を残す
   if (key === 'pickup' || key === 'bag') {
@@ -1439,8 +1455,8 @@ function send(op, replay, ok, bad){
       case 'reopen':  g.clockReopen(op.room, op.task, ...A, ...(replay ? [op.staff] : [])); break;
       case 'flag1':   g.setRoomFlag1(op.room, op.patch, ...A); break;
       case 'flags':   g.setRoomFlags(op.rooms, op.patch, ...A); break;
-      case 'code':    g.setRoomCode(op.rooms, op.code, ...A); break;
-      case 'time':    g.setRoomTime(op.rooms, op.field, op.value, ...A); break;
+      case 'code':    g.setRoomCode(op.rooms, op.code, replay ? op.at : null, op.staff); break;
+      case 'time':    g.setRoomTime(op.rooms, op.field, op.value, replay ? op.at : null, op.staff); break;
       case 'collect': g.setCollectCheck(op.room, op.staff, op.ok, ...A); break;
       default: fin(bad, { message: 'unknown' });
     }

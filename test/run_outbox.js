@@ -7,7 +7,7 @@ const code = fs.readFileSync('' + require('path').join(__dirname, '../') + 'Code
 vm.runInContext(code + "\n;/* テスト：管理用の関数は暗証番号なしで中身を直接呼ぶ */ ['mergeAll','getSaved','saveDayNote','getDayNote','saveImport','addOrder','setOrder','getOrders','getRoomAdmin','setRoomAdmin','getReport','getSummary','getSpecial','getStale','setSpecialNames','buildSpecialSheet','buildDailyReport','buildFloorReport','buildManagerReport','getDeclarationText','readIndicator','readIndicatorCrops','readOrder','readDouble','mergeSheets','resortLog'].forEach(n => { this[n] = this[n + '_']; });\n" + `
 ;globalThis.__api = { initSpreadsheet, crossCheck_, normOrder_, normDouble_, mergeAll, saveImport, getBoard,
   clockStart, clockFinish, clockOnce, clockUndo, clockReopen, setRoomFlag1, setRoomFlags, setCollectCheck, addOrder, setOrder, getOrders,
-  getRoomAdmin, setRoomAdmin, getSummary, today_, ss_, NCOL, LOG_HEAD, buildFloorReport, buildDailyReport, setRoomCode,
+  getRoomAdmin, setRoomAdmin, getSummary, today_, ss_, NCOL, LOG_HEAD, buildFloorReport, buildDailyReport, setRoomCode, setRoomTime,
   resetSS: () => { SS_CACHE_ = null; }, archiveOldLogs, KEEP_MONTHS };`, ctx);
 const A = ctx.__api, ok = (c, m) => console.log((c ? '  OK ' : '  NG ') + m);
 const T = A.today_();
@@ -71,20 +71,20 @@ r = A.clockStart(o4, '上井 勇輔', 'clean', NOW + 60 * MIN); ok(r.clean.start
 
 console.log('■ DDセット・回収・確認');
 const st = B.rooms.find(x => x.kbn === 'STAY' && !x.fullClean).room;
-A.setRoomFlag1(st, { skip: true, dd: true }, NOW - 40 * MIN);
+A.setRoomFlag1(st, { __by: 'テスト 係', skip: true, dd: true }, NOW - 40 * MIN);
 r = A.clockOnce(st, '上井 勇輔', 'clean', NOW - 40 * MIN); ok(r.clean.start === hm(NOW - 40 * MIN) && r.clean.state === 'done', 'セット済 ' + r.clean.start);
 r = A.clockOnce(st, '上井 勇輔', 'clean', NOW - 40 * MIN); ok(r.clean.state === 'done', 'セット済の二重は成功扱い');
 try { A.clockOnce(st, '川原 なつみ', 'clean', NOW - 39 * MIN); ok(false, '別の人'); } catch (e) { ok(/セット済/.test(e.message), '別の人の送り直しは断る'); }
-r = A.setRoomFlag1(o1, { pickup: true, __by: '上井 勇輔' }, NOW - 9 * MIN);
+r = A.setRoomFlag1(o1, { __by: 'テスト 係', pickup: true, __by: '上井 勇輔' }, NOW - 9 * MIN);
 ok(r.pickupBy === '上井 勇輔 ' + hm(NOW - 9 * MIN), '回収は押した時刻 ' + r.pickupBy);
-r = A.setRoomFlag1(o1, { pickup: true, __by: '川原 なつみ' }, NOW - 5 * MIN); ok(r.pickupBy === '上井 勇輔 ' + hm(NOW - 9 * MIN), '回収の二重は最初のまま');
+r = A.setRoomFlag1(o1, { __by: 'テスト 係', pickup: true, __by: '川原 なつみ' }, NOW - 5 * MIN); ok(r.pickupBy === '上井 勇輔 ' + hm(NOW - 9 * MIN), '回収の二重は最初のまま');
 r = A.setCollectCheck(o1, '川原 なつみ', true, NOW - 8 * MIN); ok(r.collectOk === '川原 なつみ ' + hm(NOW - 8 * MIN), '確認 ' + r.collectOk);
 r = A.setCollectCheck(o1, '上井 勇輔', true, NOW - 2 * MIN); ok(r.collectOk === '川原 なつみ ' + hm(NOW - 8 * MIN), '確認の二重は最初のまま');
-r = A.setRoomFlag1(o1, { pickup: false }); ok(!r.pickupBy && !r.collectOk, '外すと消える');
+r = A.setRoomFlag1(o1, { __by: 'テスト 係', pickup: false }); ok(!r.pickupBy && !r.collectOk, '外すと消える');
 
 console.log('■ まとめて操作');
-let bd = A.setRoomFlags([o2, o3], { dd: true }, NOW - 3 * MIN); ok(bd.rooms.filter(x => (x.room === o2 || x.room === o3) && x.dd).length === 2, 'DD 2室');
-bd = A.setRoomCode([outs[5]], 'O', NOW - 3 * MIN); ok(bd.rooms.find(x => x.room === outs[5]).code === 'O', 'アウト済');
+let bd = A.setRoomFlags([o2, o3], { __by: 'テスト 係', dd: true }, NOW - 3 * MIN); ok(bd.rooms.filter(x => (x.room === o2 || x.room === o3) && x.dd).length === 2, 'DD 2室');
+bd = A.setRoomCode([outs[5]], 'O', NOW - 3 * MIN, 'テスト 係'); ok(bd.rooms.find(x => x.room === outs[5]).code === 'O', 'アウト済');
 
 console.log('■ 断られた入室のあとの送り直し（別の人の作業に付けない・消さない）');
 const [p1, p2, p3, p4] = outs.slice(8);
@@ -99,17 +99,17 @@ try { A.clockFinish(p2, '上井 勇輔', 'clean', NOW - 1 * MIN); ok(false, '成
 try { A.clockReopen(p2, 'clean', NOW + 0, '上井 勇輔'); ok(false, '戻さない'); } catch (e) { ok(/さんの作業/.test(e.message), '作業中に戻すも本人だけ'); }
 r = A.clockReopen(p2, 'clean', Date.now(), '川原 なつみ'); ok(r.clean.state === 'doing', '本人の作業中に戻すは通る');
 const st2 = B.rooms.filter(x => x.kbn === 'STAY' && !x.fullClean && x.room !== st)[0].room;
-A.setRoomFlag1(st2, { skip: true, dd: true });
+A.setRoomFlag1(st2, { __by: 'テスト 係', skip: true, dd: true });
 A.clockStart(st2, '川原 なつみ', 'clean', NOW - 20 * MIN);
 try { A.clockOnce(st2, '上井 勇輔', 'clean', NOW - 40 * MIN); ok(false, 'DDセット済を付けない'); } catch (e) { ok(/入室中/.test(e.message), 'DDセット済も別の人の入室には付けない'); }
 r = A.clockOnce(st2, '川原 なつみ', 'clean', NOW - 10 * MIN); ok(r.clean.state === 'done' && r.clean.minutes === 10, '本人のセット済は付く ' + r.clean.minutes + '分');
 console.log('■ 古い「外す」で新しい回収を消さない');
-A.setRoomFlag1(p3, { pickup: true, __by: '川原 なつみ' });
-r = A.setRoomFlag1(p3, { pickup: false, __by: '上井 勇輔' }, NOW - 3 * MIN); ok(r.pickup && /川原/.test(r.pickupBy), '川原さんの回収は残る ' + r.pickupBy);
-r = A.setRoomFlag1(p3, { pickup: false, __by: '川原 なつみ' }, NOW - 1 * MIN); ok(!r.pickup && !r.pickupBy, '本人の外すは効く');
+A.setRoomFlag1(p3, { __by: 'テスト 係', pickup: true, __by: '川原 なつみ' });
+r = A.setRoomFlag1(p3, { __by: 'テスト 係', pickup: false, __by: '上井 勇輔' }, NOW - 3 * MIN); ok(r.pickup && /川原/.test(r.pickupBy), '川原さんの回収は残る ' + r.pickupBy);
+r = A.setRoomFlag1(p3, { __by: 'テスト 係', pickup: false, __by: '川原 なつみ' }, NOW - 1 * MIN); ok(!r.pickup && !r.pickupBy, '本人の外すは効く');
 console.log('■ 遅れて届いた「アウト前に戻す」');
 A.clockStart(p4, '上井 勇輔', 'clean');
-bd = A.setRoomCode([p4, outs[20]], 'D', NOW - 5 * MIN);
+bd = A.setRoomCode([p4, outs[20]], 'D', NOW - 5 * MIN, 'テスト 係');
 ok(bd.rooms.find(x => x.room === p4).code === 'O', p4 + ' 清掃に入った部屋は O のまま');
 
 console.log('■ 見直し1の直し');
@@ -120,7 +120,16 @@ console.log('■ 見直し1の直し');
   try { A.clockUndo(q1, 'clean', NOW - 20 * MIN, '上井 勇輔'); ok(false, '消してはいけない'); } catch (e) { ok(/退出が入って/.test(e.message), '押したあとの退出は消さない'); }
   ok(A.getBoard(T).rooms.find(x => x.room === q1).clean.state === 'done', q1 + ' は完了のまま');
   try { A.setCollectCheck(q2, '川原 なつみ', true); ok(false, '回収なし'); } catch (e) { ok(/回収が付いて/.test(e.message), '回収の無い部屋に確認を付けない'); }
-  A.setRoomFlag1(q2, { pickup: true, __by: '上井 勇輔' });
+  A.setRoomFlag1(q2, { __by: 'テスト 係', pickup: true, __by: '上井 勇輔' });
   try { A.setCollectCheck(q2, '川原 なつみ', true, NOW - 10 * MIN); ok(false, '付け直した回収'); } catch (e) { ok(/付け直され/.test(e.message), '確認を押したあとに付けた回収には付けない'); }
   r = A.setCollectCheck(q2, '川原 なつみ', true); ok(/川原/.test(r.collectOk), 'ふつうの確認は付く');
+}
+
+console.log('■ 名前が無いと入れない');
+{
+  const z = outs[30];
+  for (const [nm, f] of [['DD', () => A.setRoomFlag1(z, { dd: true })], ['まとめてDD', () => A.setRoomFlags([z], { dd: true })],
+                         ['アウト済', () => A.setRoomCode([z], 'O')], ['締切', () => A.setRoomTime([z], 'dueIn', '12:00')]]) {
+    try { f(); ok(false, nm + ' 名前なしで入った'); } catch (e) { ok(/名前を選んで/.test(e.message), nm + '：名前なしは断る'); }
+  }
 }

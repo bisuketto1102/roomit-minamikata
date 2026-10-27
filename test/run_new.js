@@ -51,18 +51,18 @@ ok(after.find(x => x.room === d1).clean.state === 'done', '打刻は残る');
 
 console.log('■ DDセット1回押し');
 const s1 = b.rooms.find(x => x.kbn === 'STAY' && !x.fullClean).room;
-r = A.setRoomFlag1(s1, { skip: true, dd: true, supply: '要' }); ok(r.dd && r.skip && r.supply === '要', s1 + ' 清掃不要→DD');
+r = A.setRoomFlag1(s1, { __by: 'テスト 係', skip: true, dd: true, supply: '要' }); ok(r.dd && r.skip && r.supply === '要', s1 + ' 清掃不要→DD');
 try { A.clockOnce(s1, '川原 なつみ', 'check'); ok(false,'セット前の確認は止める'); } catch(e){ ok(true, 'セット前の確認は止まる'); }
 r = A.clockOnce(s1, '上井 勇輔', 'clean'); ok(r.clean.state === 'done' && r.clean.minutes === 0 && r.code !== 'O', 'セット済 code=' + r.code);
 r = A.clockOnce(s1, '川原 なつみ', 'check'); ok(r.check.state === 'done', '確認済');
 try { A.clockOnce(s1, '上井 勇輔', 'clean'); ok(false,'二重'); } catch(e){ ok(/セット済/.test(e.message), e.message); }
 
 console.log('■ 回収');
-r = A.setRoomFlag1(d1, { pickup: true, __by: '上井 勇輔' }); ok(r.pickup && /^上井 勇輔 \d\d:\d\d$/.test(r.pickupBy), 'ゴミ回収 ' + r.pickupBy);
+r = A.setRoomFlag1(d1, { __by: 'テスト 係', pickup: true, __by: '上井 勇輔' }); ok(r.pickup && /^上井 勇輔 \d\d:\d\d$/.test(r.pickupBy), 'ゴミ回収 ' + r.pickupBy);
 r = A.setCollectCheck(d1, '川原 なつみ', true); ok(/^川原/.test(r.collectOk), '確認 ' + r.collectOk);
-r = A.setRoomFlag1(d1, { pickup: false }); ok(!r.pickup && !r.pickupBy && !r.collectOk, '外すと記録も確認も消える');
-r = A.setRoomFlag1(d1, { spAircon: true }); ok(r.spAircon, '特別清掃');
-r = A.setRoomFlag1(d1, { memo: '1/2' }); ok(r.memo === '1/2', 'メモ ' + r.memo);
+r = A.setRoomFlag1(d1, { __by: 'テスト 係', pickup: false }); ok(!r.pickup && !r.pickupBy && !r.collectOk, '外すと記録も確認も消える');
+r = A.setRoomFlag1(d1, { __by: 'テスト 係', spAircon: true }); ok(r.spAircon, '特別清掃');
+r = A.setRoomFlag1(d1, { __by: 'テスト 係', memo: '1/2' }); ok(r.memo === '1/2', 'メモ ' + r.memo);
 
 console.log('■ 追加指示');
 let o = A.addOrder('405、1201 9999', 'タオル追加'); ok(o.added.length === 2 && o.missing[0] === '9999', JSON.stringify(o.added) + ' 無し' + o.missing);
