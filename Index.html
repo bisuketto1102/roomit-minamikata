@@ -78,7 +78,9 @@
   .burger.open span:nth-child(1){transform:translateY(6.7px) rotate(45deg)}
   .burger.open span:nth-child(2){opacity:0;transform:scaleX(.2)}
   .burger.open span:nth-child(3){transform:translateY(-6.7px) rotate(-45deg)}
-  .csub{font-size:11.5px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;min-height:17px;margin-top:-2px}
+  .csub{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:12px;color:var(--muted);
+        font-variant-numeric:tabular-nums;margin-top:6px}
+  .csub .tally b{font-size:20px}
   .meter{height:5px;background:var(--line);border-radius:3px;margin-top:5px;overflow:hidden;display:flex}
   .meter span{display:block;height:100%;width:0;transition:width .6s var(--ease)}
   .meter .m1{background:var(--chk)} .meter .m2{background:var(--fin)}
@@ -316,15 +318,6 @@
          padding:13px 16px;border-radius:9px;font-size:15px;opacity:0;transform:translateY(12px);
          transition:.2s;pointer-events:none}
   .toast.on{opacity:1;transform:none}
-  /* 送れていない操作（電波切れ）の印。黄色＝あとで送る、赤＝断られた */
-  .qrow{display:flex;gap:8px;margin-top:8px}
-  .qrow[hidden]{display:none}
-  .qpill{flex:1;min-height:40px;border-radius:12px;border:1.5px solid #E0B000;background:#FFF4CC;color:#6B5200;
-    font:inherit;font-size:14px;font-weight:700;cursor:pointer}
-  .qpill.busy{opacity:.6}
-  .qpill.bad{flex:0 0 auto;padding:0 16px}
-  .qpill.bad{background:#FDE2E2;border-color:#D93025;color:#A50E0E}
-  .qpill[hidden]{display:none}
 
   /* =====================================================================
    * 仕上げ：iOSの質感に寄せる（サウスと同じ。上の指定を上書きする）
@@ -428,7 +421,6 @@
       <select id="staff" aria-label="担当者"></select>
       <svg class="pchev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
     </label>
-    <div class="tally"><b id="cDone">0</b><span class="sl">/</span><span id="cAll">0</span> <span data-t="rooms">室</span></div>
     <button class="ibtn" id="refBtn" onclick="load(true)" aria-label="更新">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
     </button>
@@ -436,7 +428,9 @@
       <span></span><span></span><span></span>
     </button>
   </div>
-  <div class="csub" id="cSub"></div>
+  <!-- 件数は2段目に置く（1段目は名前を広く見せる。同じ苗字の人を見分けられるように） -->
+  <div class="csub"><div class="tally"><b id="cDone">0</b><span class="sl">/</span><span id="cAll">0</span> <span data-t="rooms">室</span></div>
+    <span id="cSub"></span></div>
   <div class="meter"><span class="m1" id="bar1"></span><span class="m2" id="bar2"></span></div>
   <!-- よく使うもの：指示・回収（数が出る）、送れていない操作 -->
   <div class="quick">
@@ -740,7 +734,8 @@ function addHelperName(){
     google.script.run
       .withSuccessHandler(r => {
         HELPER_BUSY = false;
-        localStorage.setItem('staff', r.name);
+        // 名前を選んでいた端末（リーダーがまとめて入れる等）は、その人のまま。選んでいなければ最初に入れた人にする
+        if (!prev || r.staffList.indexOf(prev) < 0) localStorage.setItem('staff', r.name);
         BOARD.staffList = r.staffList;
         const s = $('staff');
         s.innerHTML = ''; s.dataset.sig = '';   // 作り直して、いま入れた名前を選んだ状態にする
@@ -818,6 +813,7 @@ function measureHeader(){ document.documentElement.style.setProperty('--hh', $('
 function toggleMenu(open){
   const on = open === undefined ? !$('drawer').classList.contains('on') : !!open;
   $('drawer').classList.toggle('on', on); $('dveil').classList.toggle('on', on);
+  document.documentElement.classList.toggle('lock', on);   // 開いている間は後ろの画面を動かさない
   $('menuBtn').classList.toggle('open', on); $('menuBtn').setAttribute('aria-expanded', on);
   $('drawer').setAttribute('aria-hidden', !on);
 }
