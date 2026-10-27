@@ -562,12 +562,71 @@ function flagNote_(r) {
 /*************************************************
  * 読み取り
  *************************************************/
+/**
+ * 名簿。B列が「応援」の人は C列の日付が今日のときだけ出す（サウスと同じ）。
+ * 応援の人は清掃員画面の名前欄「＋ 応援の人」から入る（addHelper）。シフト連携は応援の行を触らない。
+ */
 function getStaffList() {
   const sh = ss_().getSheetByName(SHEET.STAFF);
   if (sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues()
-    .filter(r => r[0] && String(r[1]).trim() !== '退職')
+  const today = today_();
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues()
+    .filter(r => {
+      const st = String(r[1]).trim();
+      if (!r[0] || st === '退職') return false;
+      return st !== HELPER || normDate_(r[2]) === today;
+    })
     .map(r => String(r[0]).trim());
+}
+
+const HELPER = '応援';
+
+/** 名前の比較用。空白・長音・中点・全角半角・英字の大文字小文字の違いは同じ人とみなす */
+function nameKey_(s) {
+  return String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[\s　ー－\-・･.]+/g, '');
+}
+
+/**
+ * 清掃員画面から応援の人を追加する。何人も来る日があるので、「、」や改行で区切って一度に何人でも入れられる。
+ * 名簿に同じ名前（空白・長音・中点などの違いは同じ）があればその名前を使う（表記ゆれで別人にしない）。
+ * 応援の行がすでにあれば日付だけ今日にする。返すのは最初の人（その端末で選んだ状態にする）。
+ */
+function addHelper(names) {
+  const list = (Array.isArray(names) ? names : String(names == null ? '' : names).split(/[、,，\n\r]+/))
+    .map(x => String(x || '').replace(/[\s　]+/g, ' ').trim()).filter(Boolean);
+  if (!list.length) throw new Error('名前を入れてください');
+  if (list.length > 20) throw new Error('一度に入れられるのは20人まで');
+  list.forEach(n => {
+    if (n.length > 20) throw new Error('名前は1人20文字までで入れてください：' + n.slice(0, 20));
+    if (/[<>]/.test(n)) throw new Error('名前に < > は使えません');
+  });
+
+  return withLock_(() => {
+    const sh = ss_().getSheetByName(SHEET.STAFF);
+    const today = today_();
+    if (!sh.getRange(1, 3).getValue()) sh.getRange(1, 3).setValue('応援日').setFontWeight('bold');
+    const out = [], seen = {};
+    list.forEach(n => {
+      const k = nameKey_(n);
+      if (seen[k]) return;
+      seen[k] = 1;
+      const last = sh.getLastRow();
+      const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, 3).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        if (nameKey_(rows[i][0]) !== k) continue;
+        const st = String(rows[i][1]).trim();
+        if (st === '退職') continue;               // 退職者と同名の応援は別の行で持つ
+        if (st === HELPER) sh.getRange(i + 2, 3).setNumberFormat('@').setValue(today);
+        out.push(String(rows[i][0]).trim());
+        return;
+      }
+      const at = appendAt_(sh, 1);
+      sh.getRange(at, 3).setNumberFormat('@');   // 日付が日付型に変わらないよう文字列固定
+      sh.getRange(at, 1, 1, 3).setValues([[n, HELPER, today]]);
+      out.push(n);
+    });
+    return { name: out[0], names: out, staffList: getStaffList() };
+  });
 }
 
 function rowToRoom_(r) {

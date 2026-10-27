@@ -14,7 +14,6 @@
  *************************************************/
 const SHIFT_FACILITY  = '南方';
 const SHIFT_ROLE_WORDS = ['社員', '正社員', 'パート', 'アルバイト', 'バイト', '派遣', 'リーダー', 'サブリーダー', '責任者', 'チェッカー', '研修', '研修中', '新人'];
-const SHIFT_HELPER = '応援';   // 南方の名簿には今は無い。手で「応援」と書いた人は触らない
 const SHIFT_MIN_NAMES = 5;      // これより少なければ読み取り失敗とみなして何もしない
 const SHIFT_AUTO_MAX_RETIRE = 0.3;   // 自動のとき、在籍の3割を超える退職は止める（3人までは通す）
 function shiftTitle_(y) { return '清掃員シフト ' + y + '年'; }
@@ -93,7 +92,7 @@ function planShiftSync_(shift0) {
     if (!k) return;
     known[k] = 1;
     const on = !!inShift[k];
-    if (st === '退職' || st === SHIFT_HELPER) { if (on) back.push({ row: i + 2, name: n }); return; }
+    if (st === '退職' || st === HELPER) { if (on) back.push({ row: i + 2, name: n }); return; }
     active++;
     if (!on) retire.push({ row: i + 2, name: n });
   });
@@ -107,7 +106,7 @@ function planShiftSync_(shift0) {
 function writeShiftSync_(plan) {
   const sh = ss_().getSheetByName(SHEET.STAFF);
   const stamp = 'シフト ' + today_() + ' ';
-  if (!sh.getRange(1, 4).getValue()) sh.getRange(1, 3, 1, 2).setValues([['（空き）', 'シフト連携']]).setFontWeight('bold');
+  if (!sh.getRange(1, 4).getValue()) sh.getRange(1, 3, 1, 2).setValues([['応援日', 'シフト連携']]).setFontWeight('bold');
   plan.retire.forEach(x => sh.getRange(x.row, 2, 1, 3).setValues([['退職', '', stamp + 'シフトに無いため退職']]));
   plan.back.forEach(x   => sh.getRange(x.row, 2, 1, 3).setValues([['在籍', '', stamp + 'シフトに戻ったため在籍']]));
   if (plan.add.length) {
@@ -189,9 +188,4 @@ function removeShiftTrigger_() {
   ScriptApp.getProjectTriggers().forEach(t => {
     if (t.getHandlerFunction() === 'syncStaffFromShift') ScriptApp.deleteTrigger(t);
   });
-}
-
-/** 名前の比較用。空白・長音・中点・全角半角・英字の大文字小文字の違いは同じ人とみなす */
-function nameKey_(s) {
-  return String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[\s　ー－\-・･.]+/g, '');
 }

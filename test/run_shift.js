@@ -29,3 +29,21 @@ console.log('■ 読めないときは触らない');
 GRID = [row('上井 勇輔', '南方')];
 call('syncStaffFromShift', []);
 ok(call('getStaffList', []).length === names.length && JSON.parse(call('props_', []).getProperty('SHIFT_LAST')).status === 'error', '5人未満は止める');
+
+console.log('■ 応援の人');
+{
+  const r = call('addHelper', ['応援 一郎、応援　二郎\n上井勇輔、応援 一郎']);
+  ok(r.names.join('/') === '応援 一郎/応援 二郎/上井 勇輔', '何人でも一度に・名簿の人は名簿の表記・だぶりは1回 ' + r.names.join('/'));
+  const L = call('getStaffList', []);
+  ok(L.indexOf('応援 一郎') >= 0 && L.indexOf('応援 二郎') >= 0 && L.filter(n => n === '上井 勇輔').length === 1, '今日の名簿に出る');
+  const rows = st.getRange(2, 1, st.getLastRow() - 1, 3).getValues();
+  const h = rows.filter(x => x[1] === '応援');
+  ok(h.length === 2 && h.every(x => x[2] === call('today_', [])), '応援・今日の日付（文字）で2行');
+  const i = rows.findIndex(x => x[0] === '応援 一郎'); st.getRange(i + 2, 3).setValue('2026-01-01');
+  ok(call('getStaffList', []).indexOf('応援 一郎') < 0, '別の日の応援は出ない');
+  call('addHelper', ['応援一郎']); ok(call('getStaffList', []).indexOf('応援 一郎') >= 0 && st.getRange(2, 1, st.getLastRow() - 1, 1).getValues().filter(x => x[0] === '応援 一郎').length === 1, 'また来た日は日付だけ今日に（行は増えない）');
+  GRID = [row('上井 勇輔', '南方'), row('川原 なつみ', '南方'), row('戻る 人', '南方'), row('新しい 人', '南方'), row('A', '南方'), row('B', '南方')];
+  const p2 = call('planShiftSync_', []);
+  ok(!p2.retire.some(x => /応援/.test(x.name)), 'シフト連携で応援の人は退職にしない');
+  try { call('addHelper', ['<b>']); ok(false, '<> は断る'); } catch (e) { ok(true, '< > は断る'); }
+}

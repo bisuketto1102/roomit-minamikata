@@ -23,11 +23,20 @@
   button{border:0;background:none;cursor:pointer;padding:0}
   button:focus-visible,select:focus-visible{outline:3px solid var(--action);outline-offset:2px}
 
-  header{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
-         padding:12px 14px 0;padding-top:calc(12px + env(safe-area-inset-top))}
-  .who{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  :root{ --spring:cubic-bezier(.34,1.56,.64,1); --ease:cubic-bezier(.32,.72,0,1); --hh:150px; }
+  html.lock,html.lock body{overflow:hidden}
+  body{-webkit-font-smoothing:antialiased}
+  svg{display:block}
+
+  /* ===== ヘッダー（サウスと同じ形） ===== */
+  header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);
+         -webkit-backdrop-filter:saturate(1.6) blur(14px);backdrop-filter:saturate(1.6) blur(14px);
+         padding:10px 14px 0;padding-top:calc(10px + env(safe-area-inset-top));
+         border-bottom:1px solid transparent;transition:box-shadow .25s,border-color .25s}
+  header.scrolled{border-bottom-color:var(--line);box-shadow:0 6px 18px -12px rgba(16,32,48,.35)}
+  .top{display:flex;align-items:center;gap:8px}
   /* 名前を選ぶ：丸いアイコン＋名前のカプセル（サウスと同じ）。未選択は赤くやさしく脈打って気づかせる */
-  .pcap{flex:1 1 auto;min-width:0;max-width:66%;display:flex;align-items:center;gap:9px;height:44px;padding:0 12px 0 6px;
+  .pcap{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:9px;height:44px;padding:0 12px 0 6px;
         border-radius:22px;background:var(--surface);position:relative;cursor:pointer;
         box-shadow:0 2px 8px -2px rgba(20,33,61,.14),inset 0 0 0 .5px rgba(60,60,67,.14);
         transition:transform .25s cubic-bezier(.34,1.56,.64,1),background .25s}
@@ -53,12 +62,44 @@
   .foot{text-align:center;margin:22px 0 4px;color:var(--muted);font-size:12px}
   .foot .brand{font-size:19px;margin-right:6px}
   @media (prefers-reduced-motion:reduce){ .pcap.warn{animation:none} }
-  /* 2段目のボタン列 */
-  .tools{display:flex;gap:6px;margin-top:8px}
-  .tools .modebtn{flex:1 1 0;min-width:0;padding:8px 4px;font-size:13.5px;text-align:center;position:relative}
-  .tools select.modebtn{flex:0 1 92px;padding:8px 2px}
-  .modebtn .n{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:var(--ng);
-              color:#fff;font-size:11px;font-weight:700;margin-left:4px;padding:0 5px;vertical-align:1px}
+  .tally{flex:0 0 auto;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+  .tally b{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:-.02em}
+  .tally .sl{margin:0 3px;color:#B8C0C7}
+  .ibtn{flex:0 0 auto;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;
+        color:var(--action);transition:transform .25s var(--spring),background .15s}
+  .ibtn:active{transform:scale(.88);background:#E8EEF3;transition-duration:.06s}
+  #refBtn.busy svg{animation:spin .8s linear infinite}
+  #refBtn.hit{color:#2E7D4F}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* ハンバーガー：開くと × に変形する */
+  .burger span{display:block;width:20px;height:2.2px;border-radius:2px;background:var(--ink);
+               transition:transform .35s var(--ease),opacity .2s}
+  .burger{gap:4.5px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .burger.open span:nth-child(1){transform:translateY(6.7px) rotate(45deg)}
+  .burger.open span:nth-child(2){opacity:0;transform:scaleX(.2)}
+  .burger.open span:nth-child(3){transform:translateY(-6.7px) rotate(-45deg)}
+  .csub{font-size:11.5px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;min-height:17px;margin-top:-2px}
+  .meter{height:5px;background:var(--line);border-radius:3px;margin-top:5px;overflow:hidden;display:flex}
+  .meter span{display:block;height:100%;width:0;transition:width .6s var(--ease)}
+  .meter .m1{background:var(--chk)} .meter .m2{background:var(--fin)}
+  /* 指示・回収・未送信 */
+  .quick{display:flex;gap:6px;align-items:center;margin-top:9px;flex-wrap:wrap}
+  .qchip{display:flex;align-items:center;gap:5px;height:32px;padding:0 14px;border-radius:16px;font-size:14px;font-weight:600;
+         transition:transform .25s var(--spring),background .15s}
+  .qchip:active{transform:scale(.92);transition-duration:.06s}
+  .qchip .n{min-width:19px;height:19px;line-height:19px;border-radius:10px;background:var(--ng);color:#fff;font-size:11.5px;
+            font-weight:700;text-align:center;padding:0 5px}
+  .qrow{display:flex;gap:6px}
+  .qrow[hidden]{display:none}
+  .qpill{display:flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:16px;
+         background:#FDF0DC;color:#8A5300;font-size:12.5px;font-weight:800;white-space:nowrap;transition:transform .25s var(--spring)}
+  .qpill:active{transform:scale(.92);transition-duration:.06s}
+  .qpill::before{content:'';width:7px;height:7px;border-radius:50%;background:#E8A33D;animation:beat 1.4s ease-in-out infinite}
+  .qpill.busy::before{animation-duration:.5s}
+  .qpill.bad{background:#FBE3E0;color:#9B2C1F}
+  .qpill.bad::before{background:#C0392B;animation:none}
+  .qpill[hidden]{display:none}
+  @keyframes beat{0%,100%{transform:scale(1)}50%{transform:scale(.6);opacity:.5}}
   /* 自分が作業中の部屋。横1列（多いときは横にスライド）でヘッダーを高くしない */
   .mywork{display:flex;gap:6px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
   .mywork::-webkit-scrollbar{display:none}
@@ -66,13 +107,50 @@
   .mywork .wk{flex:0 0 auto;background:#D3E6F8;color:var(--action);border-radius:14px;padding:5px 11px;font-size:13px;
               font-weight:600;font-variant-numeric:tabular-nums}
   .mywork .wk b{font-size:14px;margin-right:4px}
-  .tally{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;text-align:right}
-  .tally b{font-size:21px;font-weight:600;color:var(--ink)}
-  .meter{height:4px;background:var(--line);border-radius:2px;margin-top:9px;overflow:hidden;display:flex}
-  .meter span{display:block;height:100%;width:0;transition:width .35s ease}
-  .meter .m1{background:var(--chk)} .meter .m2{background:var(--fin)}
-  .legend{display:flex;flex-wrap:wrap;gap:4px 12px;padding:9px 0;font-size:11.5px;color:var(--muted)}
-  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  /* 階ジャンプ */
+  .floors{display:flex;gap:6px;overflow-x:auto;padding:9px 0 9px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .floors::-webkit-scrollbar{display:none}
+  .fchip{flex:0 0 auto;padding:6px 14px;min-width:42px;text-align:center;border-radius:999px;font-size:13.5px;font-weight:600;
+         font-variant-numeric:tabular-nums;transition:transform .25s var(--spring),background .2s,color .2s}
+  .fchip:active{transform:scale(.9);transition-duration:.06s}
+  .band{display:flex;align-items:center;gap:10px;margin:0 -14px;padding:8px 14px;background:#EAF2FF;font-size:13px;color:#0A4FA8}
+  .band .grow{flex:1}
+  .band button{font-weight:700;color:var(--action);padding:6px 4px}
+
+  /* ===== メニュー（右から） ===== */
+  .dveil{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.28);opacity:0;pointer-events:none;
+         transition:opacity .3s;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+  .dveil.on{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;bottom:0;z-index:61;width:min(86vw,340px);background:var(--bg);
+          transform:translateX(105%);transition:transform .42s var(--ease);overflow-y:auto;overscroll-behavior:contain;
+          padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+          box-shadow:-10px 0 40px -10px rgba(0,0,0,.25)}
+  .drawer.on{transform:none}
+  .drawer .dhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .drawer .dhead b{font-size:28px}
+  .drawer section{background:var(--surface);border-radius:16px;padding:14px;margin-top:12px}
+  .drawer section:first-of-type{margin-top:4px;padding:6px 8px}
+  .drawer h4{margin:0 0 9px;font-size:12.5px;font-weight:600;color:var(--muted);letter-spacing:.01em}
+  .drawer.on section{animation:slideIn .45s var(--ease) both}
+  .drawer.on section:nth-of-type(2){animation-delay:.04s}
+  .drawer.on section:nth-of-type(3){animation-delay:.08s}
+  @keyframes slideIn{from{opacity:0;transform:translateX(18px)}}
+  .dbtn{display:flex;align-items:center;gap:12px;width:100%;padding:12px 6px;border-radius:12px;font-size:15px;font-weight:600;
+        transition:background .15s,transform .25s var(--spring)}
+  .dbtn:active{transform:scale(.97);transition-duration:.06s}
+  .dbtn svg{color:var(--action)}
+  .langs{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .langs button{padding:11px;border-radius:11px;font-size:14.5px;font-weight:600;transition:transform .25s var(--spring)}
+  .langs button:active{transform:scale(.95);transition-duration:.06s}
+  .langs button.on{background:rgba(0,122,255,.1);color:var(--action);box-shadow:inset 0 0 0 1.5px var(--action)}
+  .legend{display:grid;gap:8px;font-size:13.5px}
+  .legend > span{display:flex;align-items:center;gap:10px}
+  .legend i{flex:0 0 auto;display:inline-block;width:28px;height:16px;border-radius:4px}
+  .dfoot{text-align:center;color:var(--muted);font-size:12px;margin-top:18px}
+  .dfoot .brand{font-size:18px;margin-right:4px}
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  }
 
   .rack{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:10px}
   .flr{display:flex;border-bottom:1px solid var(--line)}
@@ -247,48 +325,176 @@
   .qpill.bad{flex:0 0 auto;padding:0 16px}
   .qpill.bad{background:#FDE2E2;border-color:#D93025;color:#A50E0E}
   .qpill[hidden]{display:none}
+
+  /* =====================================================================
+   * 仕上げ：iOSの質感に寄せる（サウスと同じ。上の指定を上書きする）
+   * 色の意味（インジケーターの紙の色・作業中/完了の青・チェック緑）は変えない。変えるのは地の色・面・線・文字・動き。
+   * ===================================================================== */
+  :root{
+    --bg:#F2F2F7; --surface:#FFFFFF; --ink:#1C1C1E; --muted:#6E6E73; --line:rgba(60,60,67,.14);
+    --fill:rgba(118,118,128,.14); --fill2:rgba(118,118,128,.08);
+    --action:#007AFF; --danger:#FF3B30;
+    --hair:.5px solid rgba(60,60,67,.2);
+    --lift:0 1px 1px rgba(0,0,0,.03),0 3px 10px -2px rgba(0,0,0,.06);
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+       letter-spacing:.003em;text-rendering:optimizeLegibility}
+  header{background:rgba(242,242,247,.74);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
+         padding-left:16px;padding-right:12px}
+  header.scrolled{border-bottom-color:rgba(60,60,67,.2);box-shadow:none}
+  .tally b{font-size:24px;letter-spacing:-.035em}
+  .ibtn{width:40px;height:40px;border-radius:20px}
+  .ibtn:active{background:var(--fill)}
+  .burger span{width:18px;height:2px}
+  .meter{height:4px;border-radius:2px;background:var(--fill);margin-top:6px}
+  .qchip{background:var(--fill);color:var(--ink)}
+  .fchip{background:var(--fill);color:var(--ink)}
+  .fchip.on{background:var(--ink);color:#fff}
+  .band{margin:0 -12px 0 -16px;padding:8px 16px}
+  .dbtn:active{background:var(--fill2)}
+  .langs button{background:var(--fill2)}
+  .mywork .wk{background:rgba(0,122,255,.1);color:var(--action)}
+
+  /* 階ごとのカード：角丸の白い面を浮かせる */
+  .rack{margin:10px 8px 0;border:0;border-radius:18px;background:var(--surface);box-shadow:var(--lift);overflow:hidden}
+  .flr{border-bottom:0}
+  .flr .lbl{flex:0 0 30px;border-right:0;background:var(--fill2);color:var(--ink);font-size:15px;font-weight:700}
+  .cells{gap:11px 6px;padding:11px 7px 12px}
+  .cell .rno{font-size:17px;font-weight:600;letter-spacing:-.015em}
+  .bar{height:30px;border-radius:8px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06)}
+  .bar::after{border-radius:8px}
+  .bar .code{height:20px;border-radius:5px;box-shadow:0 .5px 1.5px rgba(0,0,0,.14)}
+  .cell .bdg{border-radius:4px}
+  body.pick .cell.sel .bar{outline-color:var(--action)}
+  body.pick .cell.sel .rno::before{background:var(--action);border-color:var(--action)}
+
+  /* まとめて操作のバー：すりガラスの板 */
+  .actionbar{background:rgba(249,249,251,.88);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);
+             border-top:0;border-radius:22px 22px 0 0;box-shadow:0 -0.5px 0 rgba(60,60,67,.2),0 -12px 30px -14px rgba(0,0,0,.25);
+             transition:transform .42s var(--ease)}
+  .actionbar button{border:0;background:var(--surface);border-radius:12px;font-weight:600;box-shadow:0 .5px 1.5px rgba(0,0,0,.1)}
+  .actionbar input[type=time]{border:0;background:var(--surface);border-radius:12px;box-shadow:0 .5px 1.5px rgba(0,0,0,.1)}
+
+  /* 部屋の詳細：下から出る板。区切りは線ではなく面で */
+  .veil{background:rgba(0,0,0,.3)}
+  .sheet{border-radius:24px 24px 0 0;box-shadow:0 -8px 40px -12px rgba(0,0,0,.28);padding-left:16px;padding-right:16px;
+         transition:transform .42s var(--ease)}
+  .grab{width:36px;background:rgba(60,60,67,.28)}
+  .sheet h2{font-size:34px;font-weight:700;letter-spacing:-.03em}
+  .sheet h2 .tag{background:var(--fill);border:0;border-radius:7px;font-weight:700;font-size:13.5px}
+  .gate{border-left:0 !important;border-radius:14px}
+  .gate.block{box-shadow:inset 4px 0 0 #C0768A}
+  .gate.go{box-shadow:inset 4px 0 0 #4CA83D}
+  .gate.due{box-shadow:inset 4px 0 0 var(--warn)}
+  .gate.skip{box-shadow:inset 4px 0 0 #8C959D}
+  .gate.note{box-shadow:inset 4px 0 0 #2F6FBF}
+  .gate.od{box-shadow:none}
+  .steps{gap:10px}
+  .step{border:0;background:var(--fill2);border-radius:18px;padding:13px 14px;transition:background .3s,box-shadow .3s}
+  .step.doing{background:rgba(168,203,234,.18);box-shadow:inset 0 0 0 1.5px var(--prog)}
+  .step.done{background:rgba(63,134,206,.07);box-shadow:inset 0 0 0 1.5px rgba(63,134,206,.55)}
+  .step .nm{font-weight:700;font-size:16px}
+  .step.done .nm{color:var(--fin)}
+  .btn{border-radius:14px;font-size:17px;font-weight:600;padding:15px;letter-spacing:.01em}
+  .btn:active{filter:brightness(.9)}
+  .btn.fin{background:#2E9B57}
+  .btn[disabled]{opacity:.35}
+  .btn.ghost,.btn.close{color:var(--muted);font-weight:500;font-size:14.5px}
+  .btn.ghost:active,.btn.close:active{background:var(--fill2)}
+  .pair{gap:8px}
+  .pair .btn{border:0;background:var(--surface);color:var(--ink);font-weight:600;font-size:14px;box-shadow:0 .5px 1.5px rgba(0,0,0,.12)}
+  .site{border:0;background:var(--fill2);border-radius:18px;padding:12px 14px}
+  .site .r + .r{border-top:var(--hair)}
+  .site input[type=text],.site input[type=number],.site select{border:0;background:var(--surface);border-radius:10px;box-shadow:0 .5px 1.5px rgba(0,0,0,.12)}
+  .site .tog{width:51px;height:31px;border-radius:15.5px;background:rgba(120,120,128,.24)}
+  .site .tog::after{top:2px;left:2px;width:27px;height:27px;border-radius:13.5px;box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.16);
+                    transition:transform .3s var(--spring),width .2s}
+  .site .tog.on::after{transform:translateX(20px)}
+  .og .rb{border:0;background:var(--fill2);border-radius:9px}
+
+  /* お知らせ：濃いすりガラス */
+  .toast{left:12px;right:12px;max-width:480px;margin:0 auto;border-radius:18px;font-weight:500;
+         background:rgba(28,28,30,.86);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
+         box-shadow:0 16px 40px -14px rgba(0,0,0,.45)}
 </style>
 </head>
 <body>
 
-<header>
-  <!-- 1段目：名前（いちばん大事なので広く）と件数 -->
-  <div class="who">
+<header id="hdr">
+  <!-- 1段目：名前（いちばん大事なので広く）・件数・更新・メニュー（サウスと同じ形） -->
+  <div class="top">
     <label class="pcap" id="pcap">
       <span class="pav" id="pav" aria-hidden="true"></span>
       <select id="staff" aria-label="担当者"></select>
       <svg class="pchev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
     </label>
-    <div class="tally"><b id="cDone">0</b> / <span id="cAll">0</span>
-      <span data-t="rooms">室</span><br>
-      <span id="cSub" style="font-size:11.5px"></span></div>
+    <div class="tally"><b id="cDone">0</b><span class="sl">/</span><span id="cAll">0</span> <span data-t="rooms">室</span></div>
+    <button class="ibtn" id="refBtn" onclick="load(true)" aria-label="更新">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+    <button class="ibtn burger" id="menuBtn" onclick="toggleMenu()" aria-label="メニュー" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
   </div>
-  <!-- 2段目：ボタン -->
-  <div class="tools">
-    <button class="modebtn" id="refBtn" data-t="refresh" onclick="load(true)">更新</button>
-    <button class="modebtn" id="modeBtn" data-t="pick" onclick="togglePick()">選択</button>
-    <button class="modebtn" onclick="openOrd()"><span data-t="ordBtn">指示</span><span class="n" id="ordN" hidden></span></button>
-    <button class="modebtn" onclick="openCollect()"><span data-t="collect">回収</span><span class="n" id="colN" hidden></span></button>
-    <select id="langSel" class="modebtn" onchange="setLang(this.value)" aria-label="Language"></select>
-  </div>
-  <!-- 電波が切れて送れていない操作。あるときだけ出る -->
-  <div class="qrow" id="qRow" hidden>
-    <button class="qpill" id="qPill" onclick="flushNow()" hidden></button>
-    <button class="qpill bad" id="qDrop" onclick="showDropped()" hidden></button>
-  </div>
+  <div class="csub" id="cSub"></div>
   <div class="meter"><span class="m1" id="bar1"></span><span class="m2" id="bar2"></span></div>
-  <div class="mywork" id="myWork"></div>
-  <div class="legend">
-    <span><i style="background:var(--c-D)"></i><span data-t="outBefore">アウト前</span></span>
-    <span><i style="background:var(--c-O)"></i><span data-t="outDone">アウト済</span></span>
-    <span><i style="background:var(--c-S)"></i><span data-t="k_STAY">ステイ</span></span>
-    <span><i style="background:var(--c-S);box-shadow:inset 0 0 0 2px #9B4F8E"></i><span data-t="k_FULL">フルメイク</span></span>
-    <span><i style="background:var(--c-V)"></i><span data-t="k_V">空室</span></span>
-    <span><i style="background:var(--prog)"></i><span data-t="lg_doing">作業中</span></span>
-    <span><i style="background:var(--fin)"></i><span data-t="lg_done">清掃完了</span></span>
-    <span><i style="background:var(--chk)"></i><span data-t="lg_checked">チェック済</span></span>
+  <!-- よく使うもの：指示・回収（数が出る）、送れていない操作 -->
+  <div class="quick">
+    <button class="qchip" onclick="openOrd()"><span data-t="ordBtn">指示</span><span class="n" id="ordN" hidden></span></button>
+    <button class="qchip" onclick="openCollect()"><span data-t="collect">回収</span><span class="n" id="colN" hidden></span></button>
+    <span class="qrow" id="qRow" hidden>
+      <button class="qpill" id="qPill" onclick="flushNow()" hidden></button>
+      <button class="qpill bad" id="qDrop" onclick="showDropped()" hidden></button>
+    </span>
   </div>
+  <div class="mywork" id="myWork"></div>
+  <nav class="floors" id="floors"></nav>
+  <div class="band" id="pband" hidden><span class="grow" data-t="pickHint">部屋を押して選ぶ</span>
+    <button onclick="togglePick()" data-t="stopPick">選択をやめる</button></div>
 </header>
+
+<!-- メニュー（右から） -->
+<div class="dveil" id="dveil" onclick="toggleMenu(false)"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="dhead">
+    <b class="brand" aria-label="Roomit">R<svg class="oo" viewBox="0 0 74 44" aria-hidden="true"><circle cx="21" cy="22" r="17" fill="none" stroke="currentColor" stroke-width="8.5"/><circle cx="52" cy="22" r="17" fill="none" stroke="#C9962B" stroke-width="8.5"/><path d="M37.5 13.5a17 17 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="8.5"/></svg>mit</b>
+    <button class="ibtn" onclick="toggleMenu(false)" aria-label="閉じる">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <section>
+    <button class="dbtn" onclick="toggleMenu(false); togglePick(true)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M15 17.5l2 2 4-4"/></svg>
+      <span data-t="selectMode">まとめて選択</span></button>
+    <button class="dbtn" onclick="toggleMenu(false); openOrd()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6M9 4a2 2 0 0 0-2 2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1a2 2 0 0 0-2-2"/><path d="M8 12h8M8 16h5"/></svg>
+      <span data-t="ordBtn">指示</span></button>
+    <button class="dbtn" onclick="toggleMenu(false); openCollect()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+      <span data-t="collect">回収</span></button>
+    <button class="dbtn" onclick="toggleMenu(false); load(true)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      <span data-t="refresh">更新</span></button>
+  </section>
+  <section>
+    <h4 data-t="language">言語</h4>
+    <div class="langs" id="langs"></div>
+  </section>
+  <section>
+    <h4 data-t="legendT">色の見かた</h4>
+    <div class="legend">
+      <span><i style="background:var(--c-D)"></i><span data-t="outBefore">アウト前</span></span>
+      <span><i style="background:var(--c-O)"></i><span data-t="outDone">アウト済</span></span>
+      <span><i style="background:var(--c-S)"></i><span data-t="k_STAY">ステイ</span></span>
+      <span><i style="background:var(--c-S);box-shadow:inset 0 0 0 2px #9B4F8E"></i><span data-t="k_FULL">フルメイク</span></span>
+      <span><i style="background:var(--c-V)"></i><span data-t="k_V">空室</span></span>
+      <span><i style="background:var(--prog)"></i><span data-t="lg_doing">作業中</span></span>
+      <span><i style="background:var(--fin)"></i><span data-t="lg_done">清掃完了</span></span>
+      <span><i style="background:var(--chk)"></i><span data-t="lg_checked">チェック済</span></span>
+    </div>
+  </section>
+  <div class="dfoot"><b class="brand">R<svg class="oo" viewBox="0 0 74 44" aria-hidden="true"><circle cx="21" cy="22" r="17" fill="none" stroke="currentColor" stroke-width="8.5"/><circle cx="52" cy="22" r="17" fill="none" stroke="#C9962B" stroke-width="8.5"/><path d="M37.5 13.5a17 17 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="8.5"/></svg>mit</b> アパホテル〈新大阪 南方駅前〉</div>
+</aside>
 
 <div id="rack"></div>
 <div class="foot"><b class="brand" aria-label="Roomit">R<svg class="oo" viewBox="0 0 74 44" aria-hidden="true"><circle cx="21" cy="22" r="17" fill="none" stroke="currentColor" stroke-width="8.5"/><circle cx="52" cy="22" r="17" fill="none" stroke="#C9962B" stroke-width="8.5"/><path d="M37.5 13.5a17 17 0 0 1 0 17" fill="none" stroke="currentColor" stroke-width="8.5"/></svg>mit</b>アパホテル〈新大阪 南方駅前〉</div>
@@ -494,7 +700,8 @@ function syncStaff(list){
   if (sel.dataset.sig !== sig){
     // value を明示する。省くと「上原  真輝人」のような空白の2つ続く名前をブラウザが1つに詰めて一致しなくなる
     sel.innerHTML = (valid ? '' : '<option value="">'+esc(t('selNameS'))+'</option>')
-      + list.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
+      + list.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('')
+      + '<option value="' + HELP_OPT + '">' + esc(t('helperAdd')) + '</option>';
     sel.dataset.sig = sig;
     sel.value = valid ? keep : '';
   }
@@ -503,8 +710,40 @@ function syncStaff(list){
 
 /** 名前のカプセルの見た目（頭文字・未選択の赤） */
 const PERSON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>';
+/* ---------- 応援の人 ----------
+ * 別の施設から来た人は名簿に無いので、ここで名前を入れてもらう（何人でも。「、」で区切れば一度に入る）。
+ * サーバーの名簿に「応援」として今日だけ載るので、他の端末にも同じ表記で出る。 */
+const HELP_OPT = '__helper__';
+let HELPER_BUSY = false;
+function addHelperName(){
+  const sel = $('staff');
+  const prev = localStorage.getItem('staff') || '';
+  // 選択は元に戻しておく（やめたとき・失敗したときに「＋ 応援の人」のまま残らないように）
+  sel.value = BOARD.staffList.indexOf(prev) >= 0 ? prev : '';
+  paintWho();
+  if (HELPER_BUSY) return;
+  const name = (prompt(t('helperMsg'), '') || '').trim();
+  if (!name) return;
+  HELPER_BUSY = true;
+  try {
+    google.script.run
+      .withSuccessHandler(r => {
+        HELPER_BUSY = false;
+        localStorage.setItem('staff', r.name);
+        BOARD.staffList = r.staffList;
+        const s = $('staff');
+        s.innerHTML = ''; s.dataset.sig = '';   // 作り直して、いま入れた名前を選んだ状態にする
+        syncStaff(r.staffList);
+        drawMyWork(); if (CUR) fillSheet(CUR);
+        toast(t('helperAdded', { n: r.names.join('・') }));
+      })
+      .withFailureHandler(err => { HELPER_BUSY = false; toast((err && err.message) || t('failed')); })
+      .addHelper(name);
+  } catch (e) { HELPER_BUSY = false; toast(t('failed')); }
+}
+
 function paintWho(){
-  const v = $('staff').value;
+  const v = $('staff').value === HELP_OPT ? '' : $('staff').value;
   $('pcap').classList.toggle('warn', !v);
   $('pav').innerHTML = v ? esc(String(v).trim().charAt(0)) : PERSON_SVG;
 }
@@ -548,8 +787,28 @@ function buildRack(rooms){
   });
   floors.sort((a,b)=>parseInt(b.name,10)-parseInt(a.name,10));   // 上の階から
   $('rack').innerHTML = floors.map(g=>
-    '<div class="rack"><div class="flr"><div class="lbl">'+esc(g.name)+'</div>'
+    '<div class="rack" id="f-'+esc(g.name)+'"><div class="flr"><div class="lbl">'+esc(g.name)+'</div>'
     + '<div class="cells">' + g.list.map(cell).join('') + '</div></div></div>').join('');
+  $('floors').innerHTML = floors.map(g => '<button class="fchip" onclick="jumpFloor(\'' + esc(g.name) + '\', this)">'
+    + esc(g.name) + '</button>').join('');
+  measureHeader();
+}
+
+/** 階ジャンプ：ヘッダーの下にその階が来るようにする */
+function jumpFloor(f, btn){
+  const el = $('f-' + f);
+  if (!el) return;
+  document.querySelectorAll('.fchip').forEach(b => b.classList.toggle('on', b === btn));
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - $('hdr').offsetHeight - 6, behavior: 'smooth' });
+}
+function measureHeader(){ document.documentElement.style.setProperty('--hh', $('hdr').offsetHeight + 'px'); }
+
+/** メニュー（右から出る） */
+function toggleMenu(open){
+  const on = open === undefined ? !$('drawer').classList.contains('on') : !!open;
+  $('drawer').classList.toggle('on', on); $('dveil').classList.toggle('on', on);
+  $('menuBtn').classList.toggle('open', on); $('menuBtn').setAttribute('aria-expanded', on);
+  $('drawer').setAttribute('aria-hidden', !on);
 }
 
 function paintRoom(r){
@@ -653,11 +912,10 @@ function tap(room){
   if (SEL.has(room)) SEL.delete(room); else SEL.add(room);
   paint(room); syncBar();
 }
-function togglePick(){
-  PICK = !PICK; SEL.clear();
+function togglePick(on){
+  PICK = on === undefined ? !PICK : !!on; SEL.clear();
   document.body.classList.toggle('pick', PICK);
-  $('modeBtn').classList.toggle('on', PICK);
-  $('modeBtn').textContent = PICK ? t('picking') : t('pick');
+  $('pband').hidden = !PICK; measureHeader();
   BOARD.rooms.forEach(paintRoom); syncBar();
 }
 function syncBar(){
@@ -1284,10 +1542,13 @@ function checkRev(){
 
 applyLang();
 loadSpNames();
-$('langSel').innerHTML = Object.keys(LANG_NAMES)
-  .map(k => '<option value="'+k+'"'+(k===LANG?' selected':'')+'>'+LANG_NAMES[k]+'</option>').join('');
+$('langs').innerHTML = Object.keys(LANG_NAMES)
+  .map(k => '<button class="'+(k===LANG?'on':'')+'" onclick="setLang(\''+k+'\')">'+LANG_NAMES[k]+'</button>').join('');
+window.addEventListener('scroll', () => { $('hdr').classList.toggle('scrolled', window.scrollY > 4); }, { passive: true });
+window.addEventListener('resize', measureHeader);
 
 $('staff').addEventListener('change', e=>{
+  if (e.target.value === HELP_OPT) { addHelperName(); return; }
   if (e.target.value) localStorage.setItem('staff', e.target.value);
   paintWho();
   drawMyWork();
