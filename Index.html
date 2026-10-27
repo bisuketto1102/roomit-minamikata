@@ -162,7 +162,10 @@
   .cells{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 6px;padding:11px 8px}
   @media(min-width:560px){.cells{grid-template-columns:repeat(6,minmax(0,1fr))}}
 
-  .cell{text-align:left;transition:transform .08s ease}
+  .cell{text-align:left;transition:transform .08s ease;
+        /* 印（フル・特3 など）が2段に折り返す部屋があっても、同じ段の部屋で色の帯の高さをそろえる */
+        display:flex;flex-direction:column;justify-content:flex-end}
+  .cell .rno{margin-bottom:auto}
   .cell:active{transform:scale(.95)}
   .cell .rno{display:flex;align-items:center;flex-wrap:wrap;gap:2px 3px;font-size:17px;font-weight:600;
              font-variant-numeric:tabular-nums;line-height:1.25;padding:0 2px 2px}
