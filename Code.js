@@ -998,6 +998,8 @@ function clockUndo(room, task, at, staff) {
         throw new Error(room + ' の' + taskName_(task) + 'は ' + v[c - 1] + ' さんの作業です' + NOT_MINE_);
       // 押したあとに入った入室（断られたあと別の人が入った等）は消さない
       if (new Date(v[c]) > w.time) throw new Error(room + ' の' + taskName_(task) + 'は、取り消しを押したあとに入室し直されています');
+      // 押したあとに付いた退出（別の端末で完了にした等）も消さない
+      if (v[c + 1] && new Date(v[c + 1]) > w.time) throw new Error(room + ' の' + taskName_(task) + 'は、取り消しを押したあとに退出が入っています');
     }
     v[c - 1] = ''; v[c] = ''; v[c + 1] = ''; v[c + 2] = '';
     return writeRoomRow_(sh, date, x);
@@ -1142,6 +1144,14 @@ function setCollectCheck(room, staff, ok, at) {
     const x = readRoomRow_(sh, date, String(room));
     if (!x) throw new Error(room + ' の記録がありません');
     if (ok && w.replay && String(x.v[COLLECT_COL.check - 1] || '').trim()) return rowToRoomRev_(date, x.v);   // 1回目が届いていた
+    if (ok) {
+      // 回収の無い部屋には確認を付けない。送り直しのときは、押したあとに付け直した回収にも付けない
+      const stamps = ['pickup', 'bag'].map(k => String(x.v[COLLECT_COL[k] - 1] || '').trim()).filter(Boolean);
+      if (!stamps.length) throw new Error(room + ' は回収が付いていません');
+      const hmOf = t => { const m = t.match(/(\d{1,2}):(\d{2})$/); return m ? ('0' + m[1]).slice(-2) + ':' + m[2] : ''; };
+      if (w.replay && stamps.some(t => hmOf(t) > hm_(w.time)))
+        throw new Error(room + ' の回収は、確認を押したあとに付け直されています。もう一度確かめてください');
+    }
     x.v[COLLECT_COL.check - 1] = ok ? (String(staff || '').trim() + ' ' + hm_(w.time)).trim() : '';
     return writeRoomRow_(sh, date, x);
   });

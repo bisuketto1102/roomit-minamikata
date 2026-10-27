@@ -605,6 +605,9 @@ const TASKS = ['clean', 'check'];
 let BOARD = {rooms:[], staffList:[], counts:{}}, CUR = null, busy = false;
 let PICK = false, SEL = new Set(), PENDING = new Set();
 let REV = -1, LOADING = false;
+/** 自分の操作の返事の rev は、自分の分（+1）だけ進んだときだけ合わせる。
+ *  他の端末の変更も入っていたら合わせずにおき、次の確認（7秒ごと）で読み直す */
+function adoptRev(r){ if (r && Number(r) === REV + 1) REV = Number(r); }
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1172,7 +1175,7 @@ function act(kind, task){
   toast(room+' '+nm+' '+(kind==='start'?t('enter'):kind==='finish'?t('exit')
     :kind==='once'?t(task==='clean'?'ddSetBtn':'ddOkBtn'):kind==='undo'?t('undo'):t('reopen')));
 
-  const ok = o => { releaseRoom(room); if (o && o.__rev) REV = o.__rev; apply(room, o); };
+  const ok = o => { releaseRoom(room); adoptRev(o && o.__rev); apply(room, o); };
   const bad = e => { releaseRoom(room); apply(room, before);
                      toast(e.message || t('failed')); };
   // 先に貯まっている操作があれば、押した順を守るため後ろに並べる
@@ -1221,7 +1224,7 @@ function sendFlag(room, patch, before){
   const op = { kind: 'flag1', room: room, patch: patch, at: srvNow() };
   if (OUTBOX.length) { releaseRoom(room); enqueue(op); return; }
   send(op, false,
-    f => { releaseRoom(room); if (f) REV = f.__rev; applyOne_(room, f); },
+    f => { releaseRoom(room); if (f) adoptRev(f.__rev); applyOne_(room, f); },
     e => { releaseRoom(room);
       if (isNetErr(e)) { enqueue(op); toast(t('qSaved')); return; }
       if (before) applyOne_(room, before);
@@ -1332,7 +1335,7 @@ function checkCollect(room, ok){
   const op = { kind: 'collect', room: room, staff: me(), ok: ok, at: srvNow() };
   if (OUTBOX.length) { enqueue(op); return; }
   send(op, false,
-    f => { if (f) { REV = f.__rev; applyOne_(room, f); } drawCollect(); },
+    f => { if (f) { adoptRev(f.__rev); applyOne_(room, f); } drawCollect(); },
     e => { if (isNetErr(e)) { enqueue(op); toast(t('qSaved')); return; }
       if (before) applyOne_(room, before); drawCollect();
       toast(e.message || t('failed')); });

@@ -111,3 +111,16 @@ console.log('■ 遅れて届いた「アウト前に戻す」');
 A.clockStart(p4, '上井 勇輔', 'clean');
 bd = A.setRoomCode([p4, outs[20]], 'D', NOW - 5 * MIN);
 ok(bd.rooms.find(x => x.room === p4).code === 'O', p4 + ' 清掃に入った部屋は O のまま');
+
+console.log('■ 見直し1の直し');
+{
+  const [q1, q2] = outs.slice(25);
+  A.clockStart(q1, '上井 勇輔', 'clean', NOW - 30 * MIN);
+  A.clockFinish(q1, '上井 勇輔', 'clean');
+  try { A.clockUndo(q1, 'clean', NOW - 20 * MIN, '上井 勇輔'); ok(false, '消してはいけない'); } catch (e) { ok(/退出が入って/.test(e.message), '押したあとの退出は消さない'); }
+  ok(A.getBoard(T).rooms.find(x => x.room === q1).clean.state === 'done', q1 + ' は完了のまま');
+  try { A.setCollectCheck(q2, '川原 なつみ', true); ok(false, '回収なし'); } catch (e) { ok(/回収が付いて/.test(e.message), '回収の無い部屋に確認を付けない'); }
+  A.setRoomFlag1(q2, { pickup: true, __by: '上井 勇輔' });
+  try { A.setCollectCheck(q2, '川原 なつみ', true, NOW - 10 * MIN); ok(false, '付け直した回収'); } catch (e) { ok(/付け直され/.test(e.message), '確認を押したあとに付けた回収には付けない'); }
+  r = A.setCollectCheck(q2, '川原 なつみ', true); ok(/川原/.test(r.collectOk), 'ふつうの確認は付く');
+}
