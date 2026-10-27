@@ -12,7 +12,8 @@
 const T = {
 
 ja: {
-  helperAdd:'＋ 応援の人（名前を入力）', helperMsg:'別の施設から応援に来た人の名前を入れてください。\n何人かいるときは「、」で区切って入れられます。\n名簿には今日だけ出ます。', helperAdded:'{n} さんを追加しました',
+  helperMore:'入れた人：{n}\nほかにも来ている人がいれば名前を入れてください。\nいなければ空欄のまま OK。',
+  helperAdd:'＋ 応援の人（名前を入力）', helperMsg:'別の施設から応援に来た人の名前を入れてください。\n名簿には今日だけ出ます。', helperAdded:'{n} さんを追加しました',
   selectMode:'まとめて選択', language:'言語', legendT:'色の見かた', pickHint:'部屋を押して選ぶ',
   qChain:'前の操作が記録できなかったので送らなかった', qMemo:'メモ',
   selNameS:'名前を選ぶ',
@@ -59,7 +60,8 @@ ja: {
 },
 
 en: {
-  helperAdd:'+ Helper (type name)', helperMsg:'Type the name of the helper from another hotel.\nFor several people, separate names with commas.\nThe names stay on the list for today only.', helperAdded:'Added {n}',
+  helperMore:'Added: {n}\nType another helper\'s name.\nIf there are no more, leave it empty and tap OK.',
+  helperAdd:'+ Helper (type name)', helperMsg:'Type the name of the helper from another hotel.\nThe names stay on the list for today only.', helperAdded:'Added {n}',
   selectMode:'Select several', language:'Language', legendT:'Colors', pickHint:'Tap rooms to select',
   qChain:'Not sent because the previous action was not recorded', qMemo:'Memo',
   selNameS:'Choose your name',
@@ -106,7 +108,8 @@ en: {
 },
 
 vi: {
-  helperAdd:'+ Người hỗ trợ (nhập tên)', helperMsg:'Nhập tên người đến hỗ trợ từ khách sạn khác.\nNhiều người thì cách nhau bằng dấu phẩy.\nTên chỉ hiện trong danh sách hôm nay.', helperAdded:'Đã thêm {n}',
+  helperMore:'Đã nhập: {n}\nNếu còn người khác, hãy nhập tên.\nNếu không còn, để trống và bấm OK.',
+  helperAdd:'+ Người hỗ trợ (nhập tên)', helperMsg:'Nhập tên người đến hỗ trợ từ khách sạn khác.\nTên chỉ hiện trong danh sách hôm nay.', helperAdded:'Đã thêm {n}',
   selectMode:'Chọn nhiều phòng', language:'Ngôn ngữ', legendT:'Ý nghĩa màu', pickHint:'Chạm phòng để chọn',
   qChain:'Không gửi vì thao tác trước không ghi được', qMemo:'Ghi chú',
   selNameS:'Chọn tên',
@@ -153,7 +156,8 @@ vi: {
 },
 
 ne: {
-  helperAdd:'+ सहयोगी (नाम लेख्नुहोस्)', helperMsg:'अर्को होटलबाट सहयोग गर्न आएको व्यक्तिको नाम लेख्नुहोस्।\nधेरै जना भए अल्पविराम (,) ले छुट्याउनुहोस्।\nनाम आज मात्र सूचीमा देखिन्छ।', helperAdded:'{n} थपियो',
+  helperMore:'थपिएका: {n}\nअरू कोही भए नाम लेख्नुहोस्।\nनभए खाली छोडेर OK थिच्नुहोस्।',
+  helperAdd:'+ सहयोगी (नाम लेख्नुहोस्)', helperMsg:'अर्को होटलबाट सहयोग गर्न आएको व्यक्तिको नाम लेख्नुहोस्।\nनाम आज मात्र सूचीमा देखिन्छ।', helperAdded:'{n} थपियो',
   selectMode:'धेरै छान्नुहोस्', language:'भाषा', legendT:'रङको अर्थ', pickHint:'कोठा थिचेर छान्नुहोस्',
   qChain:'अघिल्लो काम रेकर्ड नभएकाले पठाइएन', qMemo:'नोट',
   selNameS:'नाम छान्नुहोस्',
@@ -200,7 +204,8 @@ ne: {
 },
 
 my: {
-  helperAdd:'+ အကူလာသူ (နာမည်ရိုက်ပါ)', helperMsg:'အခြားဟိုတယ်မှ အကူလာသူ၏ နာမည်ကို ရိုက်ထည့်ပါ။\nလူများလျှင် ကော်မာ (,) ဖြင့် ခွဲပါ။\nယနေ့အတွက်သာ စာရင်းတွင် ပေါ်ပါမည်။', helperAdded:'{n} ကို ထည့်ပြီးပါပြီ',
+  helperMore:'ထည့်ပြီး: {n}\nအခြားလူရှိလျှင် နာမည်ရိုက်ပါ။\nမရှိလျှင် အလွတ်ထားပြီး OK နှိပ်ပါ။',
+  helperAdd:'+ အကူလာသူ (နာမည်ရိုက်ပါ)', helperMsg:'အခြားဟိုတယ်မှ အကူလာသူ၏ နာမည်ကို ရိုက်ထည့်ပါ။\nယနေ့အတွက်သာ စာရင်းတွင် ပေါ်ပါမည်။', helperAdded:'{n} ကို ထည့်ပြီးပါပြီ',
   selectMode:'အများအပြား ရွေးရန်', language:'ဘာသာစကား', legendT:'အရောင်အဓိပ္ပာယ်', pickHint:'အခန်းကို နှိပ်၍ ရွေးပါ',
   qChain:'ယခင်လုပ်ဆောင်ချက် မှတ်တမ်းမတင်နိုင်၍ မပို့ပါ', qMemo:'မှတ်စု',
   selNameS:'နာမည် ရွေးပါ',
@@ -247,7 +252,8 @@ my: {
 },
 
 id: {
-  helperAdd:'+ Pembantu (ketik nama)', helperMsg:'Ketik nama orang yang datang membantu dari hotel lain.\nUntuk beberapa orang, pisahkan dengan koma.\nNama hanya muncul di daftar hari ini.', helperAdded:'{n} ditambahkan',
+  helperMore:'Sudah ditambahkan: {n}\nKetik nama orang lain jika ada.\nJika tidak ada, kosongkan dan tekan OK.',
+  helperAdd:'+ Pembantu (ketik nama)', helperMsg:'Ketik nama orang yang datang membantu dari hotel lain.\nNama hanya muncul di daftar hari ini.', helperAdded:'{n} ditambahkan',
   selectMode:'Pilih beberapa', language:'Bahasa', legendT:'Arti warna', pickHint:'Ketuk kamar untuk memilih',
   qChain:'Tidak dikirim karena tindakan sebelumnya tidak tercatat', qMemo:'Catatan',
   selNameS:'Pilih nama',
@@ -294,7 +300,8 @@ id: {
 },
 
 zh: {
-  helperAdd:'＋ 支援人员（输入姓名）', helperMsg:'请输入从其他酒店来支援的人员姓名。\n多人时用逗号（，）分开。\n只在今天的名单中显示。', helperAdded:'已添加 {n}',
+  helperMore:'已输入：{n}\n如果还有其他人，请输入姓名。\n没有的话留空并点击确定。',
+  helperAdd:'＋ 支援人员（输入姓名）', helperMsg:'请输入从其他酒店来支援的人员姓名。\n只在今天的名单中显示。', helperAdded:'已添加 {n}',
   selectMode:'批量选择', language:'语言', legendT:'颜色说明', pickHint:'点击房间进行选择',
   qChain:'上一个操作未能记录，所以没有发送', qMemo:'备注',
   selNameS:'选择姓名',

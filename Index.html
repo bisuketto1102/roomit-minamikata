@@ -722,8 +722,16 @@ function addHelperName(){
   sel.value = BOARD.staffList.indexOf(prev) >= 0 ? prev : '';
   paintWho();
   if (HELPER_BUSY) return;
-  const name = (prompt(t('helperMsg'), '') || '').trim();
-  if (!name) return;
+  // 1人入れるとすぐ次の人の欄が出る。空欄で OK（またはキャンセル）を押したら終わり
+  const names = [];
+  for (let i = 0; i < 20; i++) {
+    const msg = i === 0 ? t('helperMsg') : t('helperMore', { n: names.join('・') });
+    const v = (prompt(msg, '') || '').trim();
+    if (!v) break;
+    names.push(v);
+  }
+  if (!names.length) return;
+  const name = names.join('、');
   HELPER_BUSY = true;
   try {
     google.script.run
