@@ -3095,13 +3095,19 @@ function archiveOldLogs() {
     // 新しいシートは26列しかない。列を後ろに足した版のときも同じ。足りない列を足して見出しをそろえる
     if (ar.getMaxColumns() < NCOL) ar.insertColumnsAfter(ar.getMaxColumns(), NCOL - ar.getMaxColumns());
     ar.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
-    const at = appendAt_(ar, old.length);
-    ar.getRange(at, 1, old.length, NCOL).setValues(old);
+    // 前の回が保管に書いたあと、消す前に止まっていた行は、もう一度は書かない（保管に同じ行が2つ並ばないように）
+    const key = r => normDate_(r[0]) + '|' + String(r[1]).trim();
+    const arLast = ar.getLastRow(), tail = Math.min(arLast - 1, old.length);
+    const had = {};
+    if (tail > 0) ar.getRange(arLast - tail + 1, 1, tail, 2).getValues().forEach(r => { had[key(r)] = 1; });
+    const put = old.filter(r => !had[key(r)]);
+    const at = appendAt_(ar, Math.max(put.length, 1));
+    if (put.length) ar.getRange(at, 1, put.length, NCOL).setValues(put);
     SpreadsheetApp.flush();
     // 保管に書けたのを確かめてから、打刻ログの先頭の古い行だけ消す
     // （前は全部消して書き直していた。途中で止まると記録が消えるため）
-    const back = ar.getRange(at, 1, old.length, 2).getValues();
-    const same = back.every((r, i) => normDate_(r[0]) === normDate_(old[i][0]) && String(r[1]) === String(old[i][1]));
+    const back = put.length ? ar.getRange(at, 1, put.length, 2).getValues() : [];
+    const same = back.every((r, i) => normDate_(r[0]) === normDate_(put[i][0]) && String(r[1]) === String(put[i][1]));
     if (!same) throw new Error('保管シートに書けたか確かめられなかったので、打刻ログは消していません');
     sh.deleteRows(2, old.length);
 

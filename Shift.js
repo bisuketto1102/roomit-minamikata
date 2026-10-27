@@ -13,6 +13,7 @@
  * 管理画面からは中身を確かめてから反映できる。
  *************************************************/
 const SHIFT_FACILITY  = '南方';
+const SHIFT_ROLE_WORDS = ['社員', '正社員', 'パート', 'アルバイト', 'バイト', '派遣', 'リーダー', 'サブリーダー', '責任者', 'チェッカー', '研修', '研修中', '新人'];
 const SHIFT_HELPER = '応援';   // 南方の名簿には今は無い。手で「応援」と書いた人は触らない
 const SHIFT_MIN_NAMES = 5;      // これより少なければ読み取り失敗とみなして何もしない
 const SHIFT_AUTO_MAX_RETIRE = 0.3;   // 自動のとき、在籍の3割を超える退職は止める（3人までは通す）
@@ -42,7 +43,8 @@ function cleanShiftName_(raw) {
   s = s.replace(/[（(][^）)]*[）)]/g, ' ');   // （チェック可）(火、木) （G） など
   s = s.replace(/※.*$/, '');                 // ※10/2退職 など
   const t = s.split(/[\s　]+/).filter(Boolean);
-  while (t.length && /[0-9０-９]/.test(t[t.length - 1])) t.pop();   // 末尾の「平日週4」「11.4-11」など
+  // 末尾の「平日週4」「11.4-11」など・同じ行に書き足した立場（「上井 勇輔 社員」など）
+  while (t.length && (/[0-9０-９]/.test(t[t.length - 1]) || (t.length > 1 && SHIFT_ROLE_WORDS.indexOf(t[t.length - 1]) >= 0))) t.pop();
   return t.join('　');
 }
 
@@ -72,8 +74,8 @@ function readShiftNames_(when) {
 }
 
 /** 名簿とシフト表を比べて、何を変えるかだけ決める（書き込まない） */
-function planShiftSync_() {
-  const shift = readShiftNames_();
+function planShiftSync_(shift0) {
+  const shift = shift0 || readShiftNames_();
   if (shift.names.length < SHIFT_MIN_NAMES) {
     throw new Error('「' + shift.tab + '」の南方の名前が ' + shift.names.length + ' 人しか読めませんでした。シフト表の形が変わっていないか確認してください');
   }
@@ -134,8 +136,10 @@ function previewShiftSync(pin) {
 /** 管理画面：確かめたうえで反映する。毎朝の自動反映もここで有効にする */
 function applyShiftSync(pin) {
   needAdmin_(pin);
+  // シフト表（外のファイル）はロックの外で読む。業務中に押しても打刻を待たせない
+  const shift = readShiftNames_();
   return withLock_(() => {
-    const p = planShiftSync_();
+    const p = planShiftSync_(shift);
     writeShiftSync_(p);
     const o = shortPlan_(p, 'applied', '管理画面から反映');
     saveShiftLast_(o);

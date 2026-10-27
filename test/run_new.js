@@ -103,3 +103,11 @@ const ar = A.archiveOldLogs(); ok(ar.moved === 1300, '保管へ ' + ar.moved + '
   const free = bb.rooms.find(x => x.kbn === 'STAY' && x.clean.state === 'todo' && !x.dd).room;
   const rr = A.clockStart(free, '上井 勇輔', 'clean'); ok(rr.room === free && rr.clean.state === 'doing', '移したあとも打刻できる ' + free);
   ok(A.archiveOldLogs().moved === 0, '2回目は何もしない'); }
+{ // 保管に書いたあと、消す前に止まっていた場合：同じ行を保管に2回書かない
+  const LG2 = A.ss_().getSheetByName('打刻ログ'), AR = A.ss_().getSheetByName('打刻ログ_保管');
+  const before = AR.getLastRow();
+  const o2 = []; for (let i = 0; i < 5; i++) { const r = new Array(A.NCOL).fill(''); r[0] = '2026-02-0' + (i + 1); r[1] = '2' + String(i + 1).padStart(2, '0'); o2.push(r); }
+  AR.maxRows += 10; AR.getRange(AR.getLastRow() + 1, 1, 5, A.NCOL).setValues(o2);          // 保管には書けていた
+  LG2.maxRows += 10; LG2.getRange(LG2.getLastRow() + 1, 1, 5, A.NCOL).setValues(o2);       // 打刻ログからは消せていなかった
+  const a2 = A.archiveOldLogs();
+  ok(a2.moved === 5 && AR.getLastRow() === before + 5 && LG2.getLastRow() - 1 === 179, '止まったあとの2回目：保管は5行のまま・打刻ログから5行消える'); }

@@ -13,9 +13,9 @@ ctx.shiftFile_ = () => ({ getName: () => '清掃員シフト 2026年', getUrl: (
   getSheetByName: () => ({ getLastRow: () => GRID.length, getLastColumn: () => 34,
     getRange: () => ({ getDisplayValues: () => GRID.map(r => r.concat(Array(34).fill('')).slice(0, 34)) }) }) });
 const row = (n, f, days) => [n, f].concat(days || []);
-GRID = [row('氏名', '施設'), row('上井　勇輔（チェック可）', '南方'), row('9-17', ''), row('川原 なつみ\n社員 ベトナム', '南方'),
+GRID = [row('氏名', '施設'), row('上井　勇輔（チェック可）', '南方'), row('9-17', ''), row('川原 なつみ 社員', '南方'),
         row('戻る 人', '南方'), row('新しい 人 平日週4', '南方'), row('サウスの 人', 'サウス'), row('手伝い 人', 'サウス', ['', '南方']),
-        row('A', '南方'), row('B', '南方')];
+        row('A', '南方'), row('B', '南方'), row('11.4-11', '南方')];
 console.log('■ シフト表と照らし合わせ');
 const p = call('planShiftSync_', []);
 ok(p.add.join(',') === '新しい　人,手伝い　人,A,B', '追加 ' + p.add.join(','));
