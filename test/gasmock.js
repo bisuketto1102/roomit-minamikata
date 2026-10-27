@@ -136,7 +136,7 @@ const env = {
     get: k => (k in cache ? cache[k] : null), put: (k,v) => { cache[k]=v; },
     remove: k => { delete cache[k]; }, removeAll: ks => ks.forEach(k=>delete cache[k]) }) },
   LockService: { getScriptLock: () => ({ waitLock(){}, tryLock(){ return true; }, releaseLock(){} }) },
-  Utilities: {
+  Utilities: { newBlob: (d, mt, n) => ({ getBytes: () => Array.from(Buffer.from(String(d))), getName: () => n }),
     sleep(){},
     formatDate(d, tz, fmt){
       d = new Date(d);

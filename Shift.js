@@ -158,7 +158,10 @@ function applyShiftSync(pin) {
 /** 毎朝の自動反映（トリガーから呼ばれる） */
 function syncStaffFromShift() {
   // 管理画面で一度照らし合わせて反映するまでは動かない（/exec から誰でも呼べるため。中身を見ないまま退職にしない）
-  if (props_().getProperty('SHIFT_AUTO_ON') !== '1') return;
+  if (props_().getProperty('SHIFT_AUTO_ON') !== '1') {
+    saveShiftLast_(shortPlan_(null, 'stopped', '管理画面で一度「照らし合わせる」→「反映する」を押すまでは自動では反映しません'));
+    return;
+  }
   let p;
   try {
     p = planShiftSync_();

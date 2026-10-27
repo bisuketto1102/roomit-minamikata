@@ -948,8 +948,10 @@ function loadRoom(){
   const no = $('edRoom').value.trim();
   if (!no){ $('edMsg').textContent = '部屋番号を入れてください'; return; }
   $('edMsg').innerHTML = '<span class="spin"></span>呼び出し中…';
+  const day = $('date').value;   // 呼び出した日。返事を待つ間に日付を変えたら使わない
   adminRun()
     .withSuccessHandler(r=>{
+      if (day !== $('date').value) { $('edMsg').textContent = '日付が変わったので、部屋を呼び出し直してください'; return; }
       ED = r;
       const st = r.check.state === 'done' ? 'チェック済' : r.clean.state === 'done' ? '清掃済'
                : r.clean.state === 'doing' ? '清掃中（'+r.clean.staff+'）' : '未着手';
@@ -966,7 +968,7 @@ function loadRoom(){
       $('edLate').value = r.lateOut || ''; $('edNote').value = r.note || '';
       $('edMemo').value = r.memo || ''; $('edOrder').value = r.order || '';
       $('edForm').hidden = false;
-      ED.__date = $('date').value; ED.__form = edValues();   // 呼び出したときの中身。保存は変えた欄だけ送る
+      ED.__date = day; ED.__form = edValues();   // 呼び出したときの中身。保存は変えた欄だけ送る
     })
     .withFailureHandler(e=>{ $('edForm').hidden = true; $('edMsg').textContent = e.message || '呼び出せませんでした'; })
     .getRoomAdmin(no, $('date').value);
@@ -992,6 +994,7 @@ function saveRoom(){
   $('edMsg').innerHTML = '<span class="spin"></span>保存中…';
   adminRun()
     .withSuccessHandler(r=>{
+      if (!ED) { $('edMsg').textContent = r.room + ' を保存しました。'; refresh(); return; }   // 待つ間に日付を変えて閉じたとき
       const keep = ED.__date; ED = r; ED.__date = keep; ED.__form = edValues();
       $('edMsg').textContent = r.room + ' を保存しました（' + (KBNNAME[r.kbn] || r.kbn) + '）。清掃員画面にもすぐ反映されます。';
       refresh();
@@ -1377,6 +1380,7 @@ $('date').addEventListener('change', ()=>{
   // 確認して保存の中身が別の日のものなら、見出しで知らせる（保存のときも聞く）
   if (LOADED_DATE && LOADED_DATE !== $('date').value)
     $('editHint').textContent = '⚠ この中身は ' + LOADED_DATE + ' のものです。いまの日付 ' + $('date').value + ' に保存すると、その日の指示になります。';
+  else if (LOADED_DATE) $('editHint').textContent = LOADED_DATE + ' の指示として保存します。打刻の記録は消えません。';
   refresh();
 });
 $('pin').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(); });

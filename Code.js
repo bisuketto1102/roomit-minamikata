@@ -1839,6 +1839,9 @@ function buildDailyReport_(dateStr) {
   if (!sh) sh = ss.insertSheet(DAILY_SHEET);
   sh.clear();
   sh.clearFormats();
+  // 前回の作成で20列に縮めているので、A〜Z を触る前に列を戻す（無いと2回目からシートの外を指して止まる）
+  if (sh.getMaxColumns() < 26) sh.insertColumnsAfter(sh.getMaxColumns(), 26 - sh.getMaxColumns());
+  if (sh.getMaxRows() < 200) sh.insertRowsAfter(sh.getMaxRows(), 200 - sh.getMaxRows());
   sh.getRangeList(['A1:Z200']).getRanges().forEach(x => x.breakApart());
 
   const INK = '#1A1A1A', HEAD = '#E8ECEF', RULE = '#555555';
@@ -2056,7 +2059,11 @@ function buildDailyReport_(dateStr) {
     new Date()
   ]);
 
-  props_().setProperty('MAP_DAY', JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows, autoMemo: autoMemo }).slice(0, 8500));
+  // 途中で切らない。長すぎるときは自動の行を後ろから減らす（減らした行は、次の作り直しで手の行として残るだけ）
+  const am = autoMemo.slice();
+  let mj = JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows, autoMemo: am });
+  while (Utilities.newBlob(mj).getBytes().length > 8500 && am.length) { am.pop(); mj = JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows, autoMemo: am }); }
+  props_().setProperty('MAP_DAY', mj);
 
   /*
    * やり残し。実績はチェック完了で数えるので、押し忘れがあると黙って数字が減る。
@@ -2123,7 +2130,8 @@ function loadManual_(kind, date) {
  * 読んだ内容と日付を返す。配置は作ったときに記録したものを使う。
  */
 function captureManual_(kind, sh) {
-  const map = JSON.parse(props_().getProperty('MAP_' + kind) || 'null');
+  let map = null;
+  try { map = JSON.parse(props_().getProperty('MAP_' + kind) || 'null'); } catch (e) { map = null; }   // 壊れていても日報は作れるように
   if (!sh || !map || !map.date) return null;
   const g = (r, c) => String(sh.getRange(r, c).getDisplayValue() || '').trim();
   const block = (top, rows, cols, step) => {
