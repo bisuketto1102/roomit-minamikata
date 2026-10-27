@@ -42,6 +42,7 @@ function cleanShiftName_(raw) {
   let s = String(raw == null ? '' : raw).split(/\r?\n/)[0];
   s = s.replace(/[（(][^）)]*[）)]/g, ' ');   // （チェック可）(火、木) （G） など
   s = s.replace(/※.*$/, '');                 // ※10/2退職 など
+  s = s.replace(/[\/／].*$/, '');            // 「矢原 聡/ベッド」の担当の書き足し
   const t = s.split(/[\s　]+/).filter(Boolean);
   // 末尾の「平日週4」「11.4-11」など・同じ行に書き足した立場（「上井 勇輔 社員」など）
   while (t.length && (/[0-9０-９]/.test(t[t.length - 1]) || (t.length > 1 && SHIFT_ROLE_WORDS.indexOf(t[t.length - 1]) >= 0))) t.pop();
