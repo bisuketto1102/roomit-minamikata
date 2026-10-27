@@ -665,6 +665,12 @@ function rowToRoom_(r) {
   };
 }
 
+/**
+ * 帳票・集計で使う部屋。清掃不要の部屋はDDとして数える（引き継ぎ書：清掃不要もDDとして数える）。
+ * 清掃不要だけ残ってDDが外れた部屋があっても、未清掃・実質・やり残しから漏れないように。
+ */
+function reportRoom_(r) { const o = rowToRoom_(r); if (o.skip) o.dd = true; return o; }
+
 function task_(staff, start, finish, min) {
   return {
     staff: String(staff || ''), start: hm_(start), finish: hm_(finish),
@@ -1125,6 +1131,8 @@ function applyPatch_(v, patch0, time, replay) {
     if (!patch[k]) v[COLLECT_COL.check - 1] = '';
   });
   Object.keys(FLAG_COL).forEach(k => { if (k in patch) putFlag_(v, k, patch[k]); });
+  // 清掃不要の部屋はDDを外せない（清掃不要もDDとして数えるため。DD解除を押しても清掃不要の間はDDのまま）
+  if (bool_(v[FLAG_COL.skip - 1])) putFlag_(v, 'dd', true);
 }
 
 /**
@@ -1354,7 +1362,7 @@ function getRev(dateStr) {
 function getReport_(dateStr) {
   const date = dateStr || today_();
   const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
-    .filter(r => String(r[1]).trim()).map(rowToRoom_);
+    .filter(r => String(r[1]).trim()).map(reportRoom_);
 
   const floors = {};
   const blank = () => ({ OUT: 0, STAY: 0, FULL: 0, total: 0, dd: [], water: 0, done: 0, checked: 0 });
@@ -1367,7 +1375,8 @@ function getReport_(dateStr) {
     if (r.dd) o.dd.push(r.room);
     if (r.water) o.water += Number(r.water) || 0;
 
-    if (r.skip || ['OUT','STAY','FULL'].indexOf(r.kbn) < 0) return;
+    // 清掃不要はDDの部屋と同じ扱い（区分とトータルに入れる。日報の清掃指示数とそろえる）
+    if (['OUT','STAY','FULL'].indexOf(r.kbn) < 0) return;
     o[r.kbn]++; o.total++;
     if (r.clean.state === 'done') o.done++;
     if (r.check.state === 'done') o.checked++;
@@ -1397,7 +1406,7 @@ function getReport_(dateStr) {
 function getSummary_(dateStr) {
   const date = dateStr || today_();
   const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
-    .filter(r => String(r[1]).trim()).map(rowToRoom_);
+    .filter(r => String(r[1]).trim()).map(reportRoom_);
 
   const byStaff = {}, byKbn = {};
   const add = (o, key, min) => {
@@ -1752,8 +1761,10 @@ function buildDailyReport_(dateStr) {
   const date = dateStr || today_();
   const ss = ss_();
   const list = dayBlock_(ss.getSheetByName(SHEET.LOG), date, NCOL)
-    .filter(r => String(r[1]).trim()).map(rowToRoom_);
+    .filter(r => String(r[1]).trim()).map(reportRoom_);
 
+  // 記録の無い日（指示がまだ・保管へ移った日）は作らない。日報ログの数字を0で上書きしないため
+  if (!list.length) throw new Error(date + ' の記録がありません（指示がまだ保存されていないか、2か月より前で保管へ移った日です）');
   const target = list.filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
 
   /*
@@ -1802,10 +1813,11 @@ function buildDailyReport_(dateStr) {
 
   const n = {
     order:  target.length,
-    eco:    list.filter(x => x.eco && cleaned(x)).length,
-    out:    target.filter(x => x.kbn === 'OUT'  && cleaned(x)).length,
-    full:   target.filter(x => x.kbn === 'FULL' && cleaned(x)).length,
-    linen:  list.filter(x => x.linen && cleaned(x)).length,
+    // DDの部屋は中に入らないので、DD確認が済んでも清掃したことにはしない（実際に清掃した部屋だけ数える）
+    eco:    list.filter(x => x.eco && !x.dd && cleaned(x)).length,
+    out:    target.filter(x => x.kbn === 'OUT'  && !x.dd && cleaned(x)).length,
+    full:   target.filter(x => x.kbn === 'FULL' && !x.dd && cleaned(x)).length,
+    linen:  list.filter(x => x.linen && !x.dd && cleaned(x)).length,
     bag:    list.filter(x => x.bag).length,
     undone: undone.length,
     real:   target.filter(x => !x.dd && cleaned(x)).length,
@@ -1971,10 +1983,12 @@ function buildDailyReport_(dateStr) {
 
   /* ── 備考 ───────────────────────── */
   // 現場メモから作る行に、手で書き足した行を合わせる（同じ行は1つにする）
-  const memos = uniq_(((manual && manual.memo) || []).concat(
-    list.filter(x => x.memo)
+  // 現場メモから作る行（自動）と、手で書き足した行。手の行には前回の自動の行を入れない
+  //（入れると、現場メモを消したり直したりしても古い行が日報に残り続ける）
+  const autoMemo = list.filter(x => x.memo)
       .sort((a, b) => cmpRoom_(a.room, b.room))
-      .map(x => x.room + '　' + x.memo)));
+      .map(x => x.room + '　' + x.memo);
+  const memos = uniq_(((manual && manual.memo) || []).concat(autoMemo));
   const memoRows = Math.max(memos.length + 1, 4);
   const memoTop = r;
   for (let i = 0; i < memoRows; i++) {
@@ -2042,7 +2056,7 @@ function buildDailyReport_(dateStr) {
     new Date()
   ]);
 
-  props_().setProperty('MAP_DAY', JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows }));
+  props_().setProperty('MAP_DAY', JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows, autoMemo: autoMemo }).slice(0, 8500));
 
   /*
    * やり残し。実績はチェック完了で数えるので、押し忘れがあると黙って数字が減る。
@@ -2091,7 +2105,12 @@ function manualKey_(kind, date) { return 'MANUAL_' + kind + '_' + date; }
 
 function saveManual_(kind, date, data) {
   if (!date || !data) return;
-  props_().setProperty(manualKey_(kind, date), JSON.stringify(data).slice(0, 8500));
+  // 途中で切ると JSON として読めなくなり手書き欄がまとめて消えるので、長いときは長い欄を短くしてから保存する
+  const d = JSON.parse(JSON.stringify(data));
+  let j = JSON.stringify(d);
+  while (j.length > 8000 && (d.memo || d.att || []).length) { (d.memo && d.memo.length ? d.memo : d.att).pop(); j = JSON.stringify(d); }
+  ['claim', 'report'].forEach(k => { if (j.length > 8000 && d[k]) { d[k] = String(d[k]).slice(0, 1500); j = JSON.stringify(d); } });
+  props_().setProperty(manualKey_(kind, date), j);
 }
 
 function loadManual_(kind, date) {
@@ -2128,7 +2147,8 @@ function captureManual_(kind, sh) {
       leader: g(2, 15),
       hotel:  g(2, 18),
       memo:   map.memoTop ? sh.getRange(map.memoTop, 1, map.memoRows, 1).getDisplayValues()
-                              .map(x => String(x[0] || '').trim()).filter(Boolean) : []
+                              .map(x => String(x[0] || '').trim()).filter(Boolean)
+                              .filter(x => (map.autoMemo || []).indexOf(x) < 0) : []
     };
   }
   saveManual_(kind, map.date, data);
@@ -2323,7 +2343,7 @@ function buildFloorReport_(dateStr) {
   const ss = ss_();
   const log = ss.getSheetByName(SHEET.LOG);
   const list = dayBlock_(log, date, NCOL)
-    .filter(r => String(r[1]).trim()).map(rowToRoom_);
+    .filter(r => String(r[1]).trim()).map(reportRoom_);
   if (!list.length) throw new Error(date + ' の記録がありません。先に指示を取り込んで保存してください');
 
   // 特別清掃：その月の、その日までに最後にやった日にち
@@ -2547,7 +2567,7 @@ function buildManagerReport_(dateStr) {
   const date = dateStr || today_();
   const ss = ss_();
   const list = dayBlock_(ss.getSheetByName(SHEET.LOG), date, NCOL)
-    .filter(r => String(r[1]).trim()).map(rowToRoom_);
+    .filter(r => String(r[1]).trim()).map(reportRoom_);
 
   const checked = r => r.check.state === 'done';
   const target  = list.filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
@@ -2956,7 +2976,7 @@ function buildSpecialSheet_(ym) {
   r += 2;
   rg(r, 1, 1, 8).merge()
     .setValue('※ 日にちのマスは直接書き換えられます。'
-            + '直したあと管理画面の「シートの入力を取り込む」を押すと打刻ログに反映されます。'
+            + '直すとそのまま打刻ログに反映されます。'
             + '（空欄にすればその月の実施を取り消せます）')
     .setFontSize(9).setFontColor('#6E7B87').setWrap(true);
   sh.setRowHeight(r, 32);
@@ -2986,9 +3006,12 @@ function buildSpecialSheet_(ym) {
  *  「作る → 直す → 取り込む」の3ステップを「作る → 直す」に減らすため。
  *************************************************/
 
-/** 単純トリガー。GASプロジェクトのどのファイルでも1つだけ */
-function onEdit(e) {
-  try { handleSpecialEdit_(e); } catch (err) { /* 編集を邪魔しない */ }
+/**
+ * このスクリプトはスプレッドシートとは別のファイルなので、単純トリガーの onEdit は動かない。
+ * setupTrigger で「スプレッドシートの編集」のトリガー（インストール型）を置き、これを呼ばせる。
+ */
+function onSpecialSheetEdit(e) {
+  try { if (e && e.range) handleSpecialEdit_(e); } catch (err) { console.warn('特別清掃シートの反映: ' + err); }
 }
 
 function handleSpecialEdit_(e) {
@@ -3240,7 +3263,10 @@ function setupTrigger() {
   });
   ScriptApp.newTrigger('dailyMaintenance')
     .timeBased().atHour(5).everyDays(1).inTimezone('Asia/Tokyo').create();
-  Logger.log('毎朝5時台の整理を設置しました（名簿の4時台は、管理画面で一度シフト表と照らし合わせて反映したときに入る）');
+  // 特別清掃シートを直接直したときに打刻ログへ反映する（スプレッドシートの編集のトリガー）
+  ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'onSpecialSheetEdit') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('onSpecialSheetEdit').forSpreadsheet(props_().getProperty('SS_ID')).onEdit().create();
+  Logger.log('毎朝5時台の整理と、特別清掃シートの編集の反映を設置しました（名簿の4時台は、管理画面で一度シフト表と照らし合わせて反映したときに入る）');
 }
 
 function removeTrigger_() {

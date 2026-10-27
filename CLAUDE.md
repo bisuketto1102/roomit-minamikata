@@ -27,6 +27,7 @@ NODE_PATH=/opt/node-tools/node_modules node ui.js && NODE_PATH=/opt/node-tools/n
 NODE_PATH=/opt/node-tools/node_modules node run_outbox.js && NODE_PATH=/opt/node-tools/node_modules node ui_offline.js   # 送り直し
 NODE_PATH=/opt/node-tools/node_modules node run_avg.js   # 清掃員のアベレージ
 NODE_PATH=/opt/node-tools/node_modules node run_shift.js   # シフト表 → 名簿
+NODE_PATH=/opt/node-tools/node_modules node run_report.js   # 帳票の数え方（DD・清掃不要・備考・記録の無い日）
 ```
 9/29 の正解：検算OK／OUT 110・STAY 61・FULL 8／未清掃3・実質176・除菌176・ロイヤル48・ツイン2・やり残しなし。
 
@@ -100,3 +101,10 @@ clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_
 - 清掃員画面の名前欄「＋ 応援の人」から入る（`addHelper`）。何人も来る日があるので、1人入れるとすぐ次の人の欄が出る（空欄で終わり、1回20人まで）。サーバーは「、」や改行で区切った名前もまとめて受ける。名前を選んでいた端末（リーダーがまとめて入れる等）はその人のまま。選んでいなければ最初に入れた人になる。
 - スタッフシートに B列＝応援、C列＝日付（文字列固定）で書く。名簿にはC列が今日の日だけ出る。また来た日は日付だけ今日にする（行は増やさない）。名簿の人と同じ名前（`nameKey_`）ならその表記を使う。退職の人と同じ名前は別の行。
 - シフト連携は応援の行を退職にしない（シフトに出てきたら在籍に戻す）。
+
+## 帳票の数え方で決めたこと（10/27 の見直し）
+- 清掃不要の部屋はDDとして数える（引き継ぎ書）。清掃不要の間はDDを外せない（`applyPatch_`）。帳票・集計は `reportRoom_` で清掃不要をDDにして読む。集計表・申告文のトータルにも入れる（日報の清掃指示数とそろえる）。
+- アパエコ・アウト清掃・強制交換・交換依頼は、DDの部屋を入れない（DD確認が済んでも中に入っていない。実際に清掃した部屋だけ数える）。9/29 の数字は変わらない。
+- 日報の備考：手で書いた行として残すのは、現場メモから自動で入れた行を除いたものだけ（`MAP_DAY.autoMemo`）。現場メモを消すと備考からも消える。
+- 記録の無い日（指示がまだ・保管へ移った日）の日報は作らない（日報ログを0で上書きしない）。
+- 特別清掃シートの直接編集は、`setupTrigger` が置くスプレッドシートの編集トリガー（`onSpecialSheetEdit`）で打刻ログに入る。このスクリプトはスプレッドシートと別ファイルなので、単純トリガーの onEdit は動かない。
