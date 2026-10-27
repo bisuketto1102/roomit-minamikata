@@ -39,7 +39,7 @@ clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_
 - `tools/check.cjs` が見ているもの：.js と HTML内 `<script>` の構文／onclick などから呼んでる関数が画面にあるか／`google.script.run`・`adminRun()` で呼んでる関数がサーバーにあるか／画面から `_` 付きを呼んでいないか／清掃員画面から暗証番号つきの関数を呼んでいないか／管理画面が暗証番号なしで管理用の関数を呼んでいないか／同じ名前の関数・定数が2つないか／scriptlet 以外の `<?`。
 - スクリプトID `1-TnpUIqQk9L8p0iTQbT4GqN1odA304JhqzGgTVWSKrHoPwEuRNF7xAV2`
 - 現場の `/exec`：`clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_DzoiKhfu -d "変更内容"`（`-i` を付けないと新しいURLになる）
-- 2026-10-26 時点で現場は @28（45列の古い版）。10/15 版（46列）はまだ入っていない。入れるときは業務後に `initSpreadsheet()` を1回。
+- 2026-10-27 に @29 で反映（10/15 版＋サウスの仕組み）。南方はまだ現場で使っていない。反映のあと GAS エディタで `initSpreadsheet`（46列）・`setupTrigger`・`setupAppIcon` を1回ずつ。
 - 反映は業務が終わってから。
 
 ## 進め方
