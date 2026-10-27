@@ -146,7 +146,7 @@ const env = {
   },
   UrlFetchApp: { fetch(){ throw new Error('このテスト環境ではPDFは作れません（GAS上では作られます）'); } },
   DriveApp: { getFileById: () => ({ setTrashed(){}, getParents: () => ({ hasNext: () => false }) }), getRootFolder(){ return {}; } },
-  ScriptApp: { getOAuthToken: () => 'x', getProjectTriggers: () => [], newTrigger(){ const b={timeBased(){return b;},atHour(){return b;},everyDays(){return b;},inTimezone(){return b;},create(){return b;}}; return b; } },
+  ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }), getOAuthToken: () => 'x', getProjectTriggers: () => [], newTrigger(){ const b={timeBased(){return b;},atHour(){return b;},everyDays(){return b;},inTimezone(){return b;},create(){return b;}}; return b; } },
   HtmlService: {},
   Logger: { log(){} },
   console

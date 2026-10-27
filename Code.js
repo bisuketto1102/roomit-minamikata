@@ -246,6 +246,9 @@ function appIconUrl_() {
   const id = props_().getProperty('APP_ICON_' + APP_ICON_VER);
   return id ? 'https://drive.google.com/uc?export=view&id=' + id + '&format=png' : '';
 }
+/** 管理画面のメニュー「清掃員の画面を開く」用。自分の /exec のURLを返すだけ */
+function getExecUrl() { return ScriptApp.getService().getUrl() || ''; }
+
 function setupAppIcon() {
   const key = 'APP_ICON_' + APP_ICON_VER;
   if (!props_().getProperty(key)) {
