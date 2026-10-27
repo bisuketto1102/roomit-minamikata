@@ -87,12 +87,18 @@ function planShiftSync_(shift0) {
   const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, 2).getValues();
   const known = {}, add = [], retire = [], back = [];
   let active = 0;
+  // 同じ人に在籍の行があれば、退職・応援の行は戻さない。戻すのも1人1行だけ（同じ人が名簿に2つ並ばないように）
+  const activeKey = {}, backed = {};
+  rows.forEach(r => { const st = String(r[1] || '').trim(); if (st !== '退職' && st !== HELPER) activeKey[nameKey_(r[0])] = 1; });
   rows.forEach((r, i) => {
     const n = String(r[0] || '').trim(), st = String(r[1] || '').trim(), k = nameKey_(n);
     if (!k) return;
     known[k] = 1;
     const on = !!inShift[k];
-    if (st === '退職' || st === HELPER) { if (on) back.push({ row: i + 2, name: n }); return; }
+    if (st === '退職' || st === HELPER) {
+      if (on && !activeKey[k] && !backed[k]) { backed[k] = 1; back.push({ row: i + 2, name: n }); }
+      return;
+    }
     active++;
     if (!on) retire.push({ row: i + 2, name: n });
   });
@@ -143,6 +149,7 @@ function applyShiftSync(pin) {
     writeShiftSync_(p);
     const o = shortPlan_(p, 'applied', '管理画面から反映');
     saveShiftLast_(o);
+    props_().setProperty('SHIFT_AUTO_ON', '1');   // 一度確かめて反映したので、毎朝の自動を許す
     setupShiftTrigger_();
     return o;
   });
@@ -150,6 +157,8 @@ function applyShiftSync(pin) {
 
 /** 毎朝の自動反映（トリガーから呼ばれる） */
 function syncStaffFromShift() {
+  // 管理画面で一度照らし合わせて反映するまでは動かない（/exec から誰でも呼べるため。中身を見ないまま退職にしない）
+  if (props_().getProperty('SHIFT_AUTO_ON') !== '1') return;
   let p;
   try {
     p = planShiftSync_();

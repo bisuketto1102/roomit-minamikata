@@ -21,6 +21,10 @@ const p = call('planShiftSync_', []);
 ok(p.add.join(',') === '新しい　人,手伝い　人,A,B', '追加 ' + p.add.join(','));
 ok(p.retire.map(x => x.name).join(',') === '辞めた 人', '退職 ' + p.retire.map(x => x.name));
 ok(p.back.map(x => x.name).join(',') === '戻る 人', '在籍に戻す ' + p.back.map(x => x.name));
+const before0 = call('getStaffList', []).join('/');
+call('syncStaffFromShift', []);
+ok(call('getStaffList', []).join('/') === before0, '管理画面で一度反映するまでは、自動の反映は何もしない');
+call('props_', []).setProperty('SHIFT_AUTO_ON', '1');
 call('syncStaffFromShift', []);
 const names = call('getStaffList', []);
 ok(names.indexOf('辞めた 人') < 0 && names.indexOf('戻る 人') >= 0 && names.indexOf('新しい　人') >= 0 && names.indexOf('サウスの　人') < 0, '名簿 ' + names.join('/'));
@@ -46,4 +50,16 @@ console.log('■ 応援の人');
   const p2 = call('planShiftSync_', []);
   ok(!p2.retire.some(x => /応援/.test(x.name)), 'シフト連携で応援の人は退職にしない');
   try { call('addHelper', ['<b>']); ok(false, '<> は断る'); } catch (e) { ok(true, '< > は断る'); }
+}
+
+console.log('■ 退職の人が応援で来て、またシフトに出ても1行だけ在籍に戻す');
+{
+  const r0 = st.getLastRow() + 1;
+  st.getRange(r0, 1, 1, 2).setValues([['山本　かおり', '退職']]);
+  call('addHelper', ['山本 かおり']);
+  GRID = [row('上井 勇輔', '南方'), row('川原 なつみ', '南方'), row('戻る 人', '南方'), row('新しい 人', '南方'), row('A', '南方'), row('B', '南方'), row('山本　かおり', '南方')];
+  const p3 = call('planShiftSync_', []);
+  ok(p3.back.length === 1, '戻すのは1行 ' + p3.back.map(x => x.name).join('/'));
+  call('syncStaffFromShift', []);
+  ok(call('getStaffList', []).filter(n => call('nameKey_', [n]) === call('nameKey_', ['山本かおり'])).length === 1, '名簿には1人だけ');
 }

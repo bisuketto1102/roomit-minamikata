@@ -488,13 +488,13 @@
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const CODES = ['','V','SD','D','O','I','C','P','X','A'];
-const CODENAME = {'':'（未設定）',V:'V 空室',SD:'SD 滞在',D:'D 出発予定',O:'O 出済',
+const CODES = ['','V','S','SD','D','O','I','C','P','X','A'];
+const CODENAME = {'':'（未設定）',V:'V 空室',S:'S ステイ',SD:'SD 滞在',D:'D 出発予定',O:'O 出済',
                   I:'I 仮チェックイン',C:'C 清掃',P:'P 点検',X:'X 故障',A:'A ブロック'};
 const EXTRA = [['fullClean','フル清掃'],['eco','エコ清掃'],['noMake','ノーメイク'],
                ['linen','リネン交換'],['extend','延泊'],['pop','POP回収']];
 const KBNNAME = {OUT:'アウト',STAY:'ステイ',FULL:'フルメイク',V:'空室',NONE:'対象外'};
-let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '', FINISH_NOTE = '';
+let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '', FINISH_NOTE = '', LOADED_DATE = '', SP_SAVED = '';
 
 /** 「2026/9/29」「2026-09-29」などを yyyy-MM-dd にそろえる */
 function normYmd(v){
@@ -771,6 +771,7 @@ function show(res){
   }
   $('ordCard').hidden = false;
 
+  LOADED_DATE = $('date').value;
   $('editHint').textContent = $('date').value+' の指示として保存します。打刻の記録は消えません。';
   $('editCard').hidden = false;
   drawRows();
@@ -785,7 +786,7 @@ function loadSaved(){
         $('ocrMsg').textContent = res.date + ' の指示はまだ保存されていません。';
         return;
       }
-      ROWS = res.rooms; ORDER = null; DBL = null;
+      ROWS = res.rooms; ORDER = null; DBL = null; LOADED_DATE = res.date; DATE_GAP = '';
       $('bars').innerHTML = ''; $('ordCard').hidden = true;
       $('ocrMsg').textContent = res.date + ' の保存済み ' + ROWS.length + ' 室を読み込みました。'
         + '直して保存し直せます。打刻の記録は消えません。';
@@ -885,10 +886,14 @@ function kbnOf(code, full, r){
 }
 
 function save(){
-  if (DATE_GAP && DATE_GAP !== $('date').value &&
+  if (LOADED_DATE && LOADED_DATE !== $('date').value &&
+      !confirm('この中身は ' + LOADED_DATE + ' に読み込んだものです。' + $('date').value
+               + ' の指示として保存します。本当によろしいですか？')) return;
+  if (DATE_GAP && DATE_GAP !== $('date').value && DATE_GAP !== LOADED_DATE &&
       !confirm('清掃指示書は ' + DATE_GAP + ' ですが、' + $('date').value
                + ' として保存します。本当によろしいですか？')) return;
   const rows = ROWS.filter(r=>String(r.room).trim());
+  const day = $('date').value;
   const btn = document.querySelector('.btn.save');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>保存中';
   adminRun()
@@ -896,14 +901,15 @@ function save(){
       btn.disabled=false; btn.textContent='この内容で保存';
       $('saveMsg').textContent = res.date+' の指示を '+res.saved+' 室ぶん保存しました。';
       // 部屋に紐づかない記録（全室注意・コネクト・作成者など）も残す
-      if (ORDER) adminRun().saveDayNote($('date').value, ORDER, DBL);
+      if (ORDER) adminRun().saveDayNote(day, ORDER, DBL);   // 保存した日と同じ日に（途中で日付を変えても）
+      LOADED_DATE = day;
       refresh();
     })
     .withFailureHandler(e=>{
       btn.disabled=false; btn.textContent='この内容で保存';
       $('saveMsg').textContent = '保存できませんでした。'+(e.message||'');
     })
-    .saveImport($('date').value, rows);
+    .saveImport(day, rows);
 }
 
 /* ---------- 業務中の追加指示 ---------- */
@@ -937,7 +943,7 @@ function clearOd(room){
 
 /* ---------- 部屋を直す ---------- */
 let ED = null;
-$('edCode').innerHTML = CODES.filter(Boolean).map(c=>'<option value="'+c+'">'+esc(CODENAME[c]||c)+'</option>').join('');
+$('edCode').innerHTML = CODES.map(c=>'<option value="'+c+'">'+esc(CODENAME[c]||c)+'</option>').join('');
 function loadRoom(){
   const no = $('edRoom').value.trim();
   if (!no){ $('edMsg').textContent = '部屋番号を入れてください'; return; }
@@ -952,7 +958,7 @@ function loadRoom(){
       $('edW').innerHTML = ['', ...(r.dmakeKinds || [])].map(k=>'<option value="'+esc(k)+'">'+(k?esc(k):'—')+'</option>').join('');
       if (r.code && ![...$('edCode').options].some(o=>o.value===r.code))
         $('edCode').insertAdjacentHTML('beforeend','<option value="'+esc(r.code)+'">'+esc(r.code)+'</option>');
-      $('edCode').value = r.code || 'V';
+      $('edCode').value = r.code || '';   // 空の部屋を V にしない
       $('edFull').checked = !!r.fullClean; $('edNm').checked = !!r.noMake; $('edExt').checked = !!r.extend;
       $('edDd').checked = !!r.dd; $('edSupply').value = r.supply || ''; $('edSkip').checked = !!r.skip;
       $('edEco').checked = !!r.eco; $('edW').value = r.dmake || ''; $('edTw').checked = !!r.twin;
@@ -960,25 +966,33 @@ function loadRoom(){
       $('edLate').value = r.lateOut || ''; $('edNote').value = r.note || '';
       $('edMemo').value = r.memo || ''; $('edOrder').value = r.order || '';
       $('edForm').hidden = false;
+      ED.__date = $('date').value; ED.__form = edValues();   // 呼び出したときの中身。保存は変えた欄だけ送る
     })
     .withFailureHandler(e=>{ $('edForm').hidden = true; $('edMsg').textContent = e.message || '呼び出せませんでした'; })
     .getRoomAdmin(no, $('date').value);
 }
 // 清掃不要にしたら DD も立てる（清掃員画面と同じ）
 $('edSkip').addEventListener('change', ()=>{ if ($('edSkip').checked) $('edDd').checked = true; });
-function saveRoom(){
-  if (!ED) return;
-  const d = {
+function edValues(){
+  return {
     code: $('edCode').value, fullClean: $('edFull').checked, noMake: $('edNm').checked, extend: $('edExt').checked,
     dd: $('edDd').checked, supply: $('edSupply').value, skip: $('edSkip').checked, eco: $('edEco').checked,
     dmake: $('edW').value, twin: $('edTw').checked,
     dueIn: $('edDue').value, checkIn: $('edIn').value, lateOut: $('edLate').value,
     note: $('edNote').value, memo: $('edMemo').value, order: $('edOrder').value
   };
+}
+function saveRoom(){
+  if (!ED) return;
+  if (ED.__date !== $('date').value) { $('edMsg').textContent = '日付が変わっています。部屋を呼び出し直してください'; return; }
+  // 変えた欄だけ送る。呼び出したあとに清掃員が入れたDD・メモなどを、古い中身で消さないため
+  const now = edValues(), d = {};
+  Object.keys(now).forEach(k => { if (now[k] !== ED.__form[k]) d[k] = now[k]; });
+  if (!Object.keys(d).length) { $('edMsg').textContent = '変えた欄がありません'; return; }
   $('edMsg').innerHTML = '<span class="spin"></span>保存中…';
   adminRun()
     .withSuccessHandler(r=>{
-      ED = r;
+      const keep = ED.__date; ED = r; ED.__date = keep; ED.__form = edValues();
       $('edMsg').textContent = r.room + ' を保存しました（' + (KBNNAME[r.kbn] || r.kbn) + '）。清掃員画面にもすぐ反映されます。';
       refresh();
     })
@@ -1094,14 +1108,14 @@ function drawSpConf(sp){
     +   'background:var(--surface);min-width:210px"></div>'
     + '<button class="btn ghost" style="margin-top:6px" onclick="saveSpNames()">'
     +   'この月の内容を保存</button>'
-    + '<div class="msg" id="spMsg"></div>';
+    + '<div class="msg" id="spMsg">' + esc(SP_SAVED) + '</div>'; SP_SAVED = '';
 }
 
 function saveSpNames(){
   const names = [$('spName0').value, $('spName1').value, $('spName2').value];
   $('spMsg').innerHTML = '<span class="spin"></span>保存中…';
   adminRun()
-    .withSuccessHandler(r=>{ $('spMsg').textContent = '保存しました'; refresh(); })
+    .withSuccessHandler(r=>{ SP_SAVED = '保存しました'; refresh(); })
     .withFailureHandler(e=>{ $('spMsg').textContent = e.message || '保存できませんでした'; })
     .setSpecialNames($('date').value.slice(0,7), names);
 }
@@ -1356,7 +1370,15 @@ function toggleAvg(btn){
   if (n) AVG_OPEN[n] = card.classList.contains('open');
 }
 
-$('date').addEventListener('change', ()=>{ $('hdrDate').textContent=$('date').value; refresh(); });
+$('date').addEventListener('change', ()=>{
+  $('hdrDate').textContent=$('date').value;
+  // 前の日の「部屋を直す」の中身で、新しい日の部屋を上書きしないよう閉じる
+  if (ED) { ED = null; $('edForm').hidden = true; $('edMsg').textContent = '日付を変えたので、部屋を呼び出し直してください'; }
+  // 確認して保存の中身が別の日のものなら、見出しで知らせる（保存のときも聞く）
+  if (LOADED_DATE && LOADED_DATE !== $('date').value)
+    $('editHint').textContent = '⚠ この中身は ' + LOADED_DATE + ' のものです。いまの日付 ' + $('date').value + ' に保存すると、その日の指示になります。';
+  refresh();
+});
 $('pin').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(); });
 </script>
 </body>

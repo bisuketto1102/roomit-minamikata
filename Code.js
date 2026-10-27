@@ -463,6 +463,12 @@ function getDayNote_(dateStr) {
 
 
 function saveImport_(date, rooms) {
+  // 部屋番号の空白を落とし、同じ番号が2行・179室に無い番号は保存しない（打刻ログに同じ部屋が2行できないように）
+  rooms = (rooms || []).map(r => Object.assign({}, r, { room: roomNo_(r.room) })).filter(r => r.room);
+  const seen = {}, dup = [], bad = [];
+  rooms.forEach(r => { if (seen[r.room]) dup.push(r.room); seen[r.room] = 1; if (!ROOM_SET[r.room]) bad.push(r.room); });
+  if (dup.length) throw new Error('同じ部屋番号が2行あります：' + uniq_(dup).join('、') + '。直してから保存してください');
+  if (bad.length) throw new Error('南方に無い部屋番号です：' + uniq_(bad).join('、') + '。直してから保存してください');
   return withLock_(() => {
     const d = date || today_();
     const sh = ss_().getSheetByName(SHEET.LOG);
@@ -579,6 +585,9 @@ function getStaffList() {
       if (!r[0] || st === '退職') return false;
       return st !== HELPER || normDate_(r[2]) === today;
     })
+    // 同じ人（空白・長音などの違いだけ）が2行あっても1人だけ出す。在籍の行を先に使う
+    .sort((a, b) => (String(a[1]).trim() === HELPER) - (String(b[1]).trim() === HELPER))
+    .filter((r, i, arr) => arr.findIndex(x => nameKey_(x[0]) === nameKey_(r[0])) === i)
     .map(r => String(r[0]).trim());
 }
 
@@ -3174,6 +3183,8 @@ function archiveOldLogs() {
     if (tail > 0) ar.getRange(arLast - tail + 1, 1, tail, 2).getValues().forEach(r => { had[key(r)] = 1; });
     const put = old.filter(r => !had[key(r)]);
     const at = appendAt_(ar, Math.max(put.length, 1));
+    // 文字の列（時刻・メモ・記録など）は文字列に固定してから書く。日付や数字に化けないように
+    if (put.length) [2, 7, 8, 9, 28, 29, 34, 43, 44, 45, ORDER_COL].forEach(c => ar.getRange(at, c, put.length, 1).setNumberFormat('@'));
     if (put.length) ar.getRange(at, 1, put.length, NCOL).setValues(put);
     SpreadsheetApp.flush();
     // 保管に書けたのを確かめてから、打刻ログの先頭の古い行だけ消す
@@ -3247,12 +3258,12 @@ function checkAdminPin(pin) {
   const c = CacheService.getScriptCache(), k = 'pinFail';
   if (Number(c.get(k) || 0) >= 8) return false;
   if (String(pin) === String(set)) return true;
-  // まちがえたときだけ数え上げを1本ずつにする（打刻の script lock とは別の user lock）
-  let lk = null;
+  // まちがえたときは、数を1本ずつ数え直す（同時にたくさん送られても8回を超えて試させない）。
+  // 打刻のロックとは別の user lock。取れなければ止める側に倒す
+  let lk = null, n = 8;
   try { lk = LockService.getUserLock(); } catch (e) {}
-  if (!lk) c.put(k, String(Number(c.get(k) || 0) + 1), 600);
-  else if (lk.tryLock(5000)) {
-    try { c.put(k, String(Number(c.get(k) || 0) + 1), 600); } finally { lk.releaseLock(); }
+  if (lk && lk.tryLock(5000)) {
+    try { n = Number(c.get(k) || 0) + 1; c.put(k, String(n), 600); } finally { lk.releaseLock(); }
   } else c.put(k, '8', 600);
   Utilities.sleep(800);   // 総当たりを遅くする
   return false;
