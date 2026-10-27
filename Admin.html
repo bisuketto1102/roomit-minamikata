@@ -566,6 +566,7 @@ function unlock(){
       }
       $(s).classList.add('on');
     } catch(err){ alert('ファイルを開けませんでした'); }
+    $('go').hidden = false; $('go').textContent = '読み取る';
     $('go').disabled = !(IMG.f1 && IMG.f2);
   });
 });
@@ -667,7 +668,7 @@ function shrink(file, max){
 
 let USE = null;
 function read(){
-  $('go').disabled = true; $('bars').innerHTML='';
+  $('go').disabled = true; $('go').innerHTML = '<span class="spin"></span>読み取り中…'; $('bars').innerHTML='';
   // 3枚は関係がないので同時に読む（待ち時間 = いちばん遅い1枚ぶん）
   const t0 = Date.now();
   const jobs = [
@@ -715,10 +716,11 @@ function finish(ind, ord, dbl){
 }
 
 function say(t){ $('ocrMsg').innerHTML = '<span class="spin"></span>'+esc(t); }
-function fail(e){ $('go').disabled=!(IMG.f1 && IMG.f2); $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
+function fail(e){ $('go').hidden = false; $('go').textContent = '読み取る'; $('go').disabled=!(IMG.f1 && IMG.f2); $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
 
 function show(res){
-  $('go').disabled = false;
+  // 読み終えたらボタンは隠す（同じ紙をもう一度読まないように）。紙を選び直すとまた出る
+  $('go').hidden = true; $('go').textContent = '読み取る'; $('go').disabled = false;
   ROWS = res.rooms; ORDER = res.order; DBL = res.dbl || null;
   const v = res.verify;
 
@@ -886,16 +888,25 @@ function kbnOf(code, full, r){
 }
 
 function save(){
-  if (LOADED_DATE && LOADED_DATE !== $('date').value &&
-      !confirm('この中身は ' + LOADED_DATE + ' に読み込んだものです。' + $('date').value
-               + ' の指示として保存します。本当によろしいですか？')) return;
-  if (DATE_GAP && DATE_GAP !== $('date').value && DATE_GAP !== LOADED_DATE &&
-      !confirm('清掃指示書は ' + DATE_GAP + ' ですが、' + $('date').value
-               + ' として保存します。本当によろしいですか？')) return;
+  // 押したら必ず何か出す（確認でやめた・止まった・失敗した、が分からないと「反応なし」に見える）
+  const msg = t => { $('saveMsg').textContent = t; $('saveMsg').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+  try {
+    if (!ROWS.length) { msg('保存する部屋がありません。先に「読み取る」か「保存済みを読み込んで直す」をしてください。'); return; }
+    if (LOADED_DATE && LOADED_DATE !== $('date').value &&
+        !confirm('この中身は ' + LOADED_DATE + ' に読み込んだものです。' + $('date').value
+                 + ' の指示として保存します。本当によろしいですか？')) { msg('保存をやめました（日付が ' + LOADED_DATE + ' と違うため）。'); return; }
+    if (DATE_GAP && DATE_GAP !== $('date').value && DATE_GAP !== LOADED_DATE &&
+        !confirm('清掃指示書は ' + DATE_GAP + ' ですが、' + $('date').value
+                 + ' として保存します。本当によろしいですか？')) { msg('保存をやめました（清掃指示書の日付 ' + DATE_GAP + ' と、上の日付 ' + $('date').value + ' が違うため）。上の日付を直してからもう一度押してください。'); return; }
+    saveNow_(msg);
+  } catch (e) { msg('保存できませんでした（画面のエラー）：' + (e && e.message || e)); }
+}
+function saveNow_(msg){
   const rows = ROWS.filter(r=>String(r.room).trim());
   const day = $('date').value;
   const btn = document.querySelector('.btn.save');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>保存中';
+  msg('保存中…（179室ぶんで10〜20秒かかります）');
   adminRun()
     .withSuccessHandler(res=>{
       btn.disabled=false; btn.textContent='この内容で保存';
@@ -907,7 +918,7 @@ function save(){
     })
     .withFailureHandler(e=>{
       btn.disabled=false; btn.textContent='この内容で保存';
-      $('saveMsg').textContent = '保存できませんでした。'+(e.message||'');
+      msg('保存できませんでした。'+(e.message||''));
     })
     .saveImport(day, rows);
 }
