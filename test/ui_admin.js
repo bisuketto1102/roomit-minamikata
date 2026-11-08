@@ -6,12 +6,17 @@ const ctx = vm.createContext(env);
 env.PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', 'x');
 env.PropertiesService.getScriptProperties().setProperty('ADMIN_PIN', '1234');
 const seen = [];
+// ダブルメイク指示書の AI の返事（作り物）。data0929 の DOUBLE は前の凡例（青＝増設予定）で青を返していないので、
+// 今の凡例どおり青（ベッド下収納常設）も返す形にする。9/29 の紙の青のマス
+const BLUE_0929 = [].concat(...[7, 6, 5, 4].map(f => Array.from({ length: 17 }, (_, i) => String(f * 100 + i + 1))),
+  ['311', '313', '314', '316', '201', '202', '203', '204', '207', '208', '209', '210', '211', '212', '215', '216']);
+const DOUBLE_NOW = Object.assign({}, D.DOUBLE, { rooms: D.DOUBLE.rooms.concat(BLUE_0929.map(room => ({ room, kind: 'ベッド下収納' }))) });
 env.UrlFetchApp.fetchAll = reqs => reqs.map(q => {
   const body = JSON.parse(q.payload); const pr = body.contents[0].parts[0].text;
   const mime = body.contents[0].parts[1].inline_data.mime_type;
   let data;
   if (/清掃指示書」です/.test(pr)) { data = D.ORDER; seen.push('order ' + mime); }
-  else if (/ダブルメイク指示書」です/.test(pr)) { data = D.DOUBLE; seen.push('double ' + mime); }
+  else if (/ダブルメイク指示書」です/.test(pr)) { data = DOUBLE_NOW; seen.push('double ' + mime); }
   else if (/12F〜07F|06F〜02F/.test(pr)) {
     const top = /12F〜07F/.test(pr), floors = top ? ['12F','11F','10F','09F','08F','07F'] : ['06F','05F','04F','03F','02F'];
     data = { rows: floors.map(f => ({ floor: f, cells: D.IND[f].filter(Boolean).join(', ') })), counts: top ? D.BOX : {} };
@@ -46,11 +51,18 @@ const { page } = require('./pagegen.js');
   await pg.waitForFunction(() => { const m = document.getElementById('dblMsg'); return m && !/測っています/.test(m.textContent); }, null, { timeout: 30000 });
   console.log('dbl color:', await pg.textContent('#dblMsg'));
   console.log('go disabled:', await pg.isDisabled('#go'));
-  await pg.click('#go');
+  // 2回続けて押しても読み取りは1回だけ（READING）
+  await pg.evaluate(() => { read(); read(); });
   await pg.waitForFunction(() => /室を読み取り/.test(document.getElementById('ocrMsg').textContent), null, { timeout: 30000 });
   console.log('ocrMsg:', await pg.textContent('#ocrMsg'));
   console.log('bars:', (await pg.textContent('#bars')).slice(0, 300));
+  // ダブルメイク：紙の色と AI の読みが同じふつうの日は、要確認 0室・色の警告なし
+  const dq = await pg.evaluate(() => ({ ask: ROWS.filter(r => r.uncertain.some(u => /^ダブルメイク/.test(u))).map(r => r.room),
+    color: DBL && DBL.color, bars: document.getElementById('bars').textContent, ord: document.getElementById('ord').textContent }));
+  console.log((dq.color && dq.color.ok && dq.ask.length === 0 && !/ダブルメイク(は色|指示書：マスの色)/.test(dq.bars) && /マスの色で決めました（要確認 0室/.test(dq.ord)
+    ? '  OK' : '  NG') + ' ダブルメイク：色で読めて要確認 ' + dq.ask.length + '室' + (dq.ask.length ? '：' + dq.ask.join('・') : ''));
   console.log('seen:', seen.join(' | '));
+  console.log((seen.filter(x => /^double/.test(x)).length === 1 ? '  OK' : '  NG') + ' 2回押しても読み取りは1回（ダブルメイク ' + seen.filter(x => /^double/.test(x)).length + '回）');
   await pg.screenshot({ path: 'adm1.png' });
   await pg.click('.btn.save'); await pg.waitForTimeout(800);
   console.log('save:', await pg.textContent('#saveMsg'));
@@ -71,5 +83,17 @@ const { page } = require('./pagegen.js');
   await pg.click('button:has-text("フロアレポートを作る")'); await pg.waitForTimeout(1500);
   console.log('floor:', (await pg.textContent('#frMsg')).slice(0, 120));
   await pg.screenshot({ path: 'adm2.png', fullPage: true });
+  // 読み取り中に紙を選び直しても「読み取る」を戻さない
+  await pg.evaluate(() => { READING = true; $('go').disabled = true; });
+  await pg.setInputFiles('#f2', __dirname + '/pdf0929/order_0929.pdf'); await pg.waitForTimeout(800);
+  console.log((await pg.isDisabled('#go') ? '  OK' : '  NG') + ' 読み取り中に紙を選び直しても「読み取る」は押せないまま');
+  await pg.evaluate(() => { READING = false; });
+  // ダブルメイク指示書を続けて選び直すと、あとの紙の色だけが残る（前の測定があとから終わっても上書きしない）
+  await pg.setInputFiles('#f3', __dirname + '/pdf0929/double_0929.pdf');
+  await pg.setInputFiles('#f3', __dirname + '/pdf0929/indicator_0929.pdf');
+  await pg.waitForFunction(() => DBL_P, null, { timeout: 10000 });
+  await pg.evaluate(() => DBL_P); await pg.waitForTimeout(3000);
+  const last = await pg.evaluate(() => ({ ok: DBL_COLOR && DBL_COLOR.ok, msg: document.getElementById('dblMsg').textContent }));
+  console.log((last.ok === false && /読めなかった/.test(last.msg) ? '  OK' : '  NG') + ' 選び直したあとの紙（インジケーター）の結果だけが残る：' + last.msg);
   await br.close();
 })();

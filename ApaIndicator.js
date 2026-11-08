@@ -629,6 +629,9 @@ const DMAKE_KINDS = ['新規', '継続', '解除', '常設', 'ベッド下収納
  */
 const DMAKE_READ = ['新規', '継続', '解除', '常設', 'ベッド下収納', '解除→ベッド下収納', '不明'];
 
+/** 帳票に効く区分（色と AI の食い違いを要確認にするのはこの区分が変わるときだけ） */
+const DMAKE_REPORT = ['新規', '継続', '常設', '解除'];
+
 /** 日報の「ロイヤル（増設含む）」に数える色 */
 const ROYAL_KINDS = ['新規', '継続', '常設'];
 
@@ -753,11 +756,13 @@ function normDblColor_(c) {
 
 /**
  * 色を正にしてダブルメイクの区分を決める。ai は readDouble_ の結果（読めなかったら null）。
- * 人の確認（ask）に回すのは次の3つだけ。色と AI が同じ部屋・どちらも白の部屋は何も出さない。
- *   ・色と AI の区分が違う（赤とピンクはどちらも「解除」にそろえてから比べるので、その取り違えは出ない）
- *   ・色では区分ありなのに AI が返さなかった（AI が「不明」と返したものも含む）
- *   ・色を決められなかったマス（区分は AI の読みのまま）
- * AI が読めなかった日は比べようがないので、色だけで決めて何も出さない。
+ * 要確認は多すぎないように（ユーザーの決め）、人の確認（ask）に回すのは次の4つだけ。
+ *   ・色と AI で、帳票に効く区分（新規・継続・常設・解除）が変わる食い違い
+ *     （赤とピンクはどちらも「解除」にそろえてから比べる。青（ベッド下収納）と白のちがいは帳票に効かないので出さない）
+ *   ・色では新規・継続・常設・解除なのに AI が返さなかった
+ *   ・色を決められなかったマス（区分は AI の読みのまま。AI が読めなかった日も出す）
+ *   ・AI が「不明」と返した（自信なしも含む。色が白でも出す）
+ * 色と AI が同じ部屋・どちらも白の部屋は何も出さない。
  * ツイン・コネクト・注意書き・凡例は AI の読みのまま。
  */
 function dblByColor_(ai, col) {
@@ -766,17 +771,19 @@ function dblByColor_(ai, col) {
     (ai.rooms || []).forEach(x => { aiKind[x.room] = x.kind; });
     (ai.unsure || []).forEach(no => { aiUnsure[no] = 1; });
   }
+  const rep = k => DMAKE_REPORT.indexOf(k) >= 0 ? k : '';
   const rooms = [], ask = [];
   ROOMS.forEach(no => {
-    const c = col.map[no], a = aiKind[no] || '';
+    const c = col.map[no], a = aiKind[no] || '', un = !!aiUnsure[no];
     const kind = c === '?' ? a : c;
     if (kind) rooms.push({ room: no, kind: kind, from: c === '?' ? 'AI' : '色' });
-    if (!ai) return;
+    const aiSay = !ai ? '読めなかった' : un ? (a ? a + '（自信なし）' : '不明') : (a || '返さなかった');
     let why = '';
-    if (c === '?') why = '色が決められない（AI は' + (a || (aiUnsure[no] ? '不明' : '区分なし')) + '）';
-    else if (c && !a) why = '色は' + c + '、AI は' + (aiUnsure[no] ? '不明' : '返さなかった');
-    else if (c !== a) why = '色は' + (c || '白（区分なし）') + '、AI は' + a;
-    if (why) ask.push({ room: no, why: why, color: c, ai: a });
+    if (c === '?') why = '色が決められない（AI は' + (!ai ? '読めなかった' : un && !a ? '不明' : (a || '区分なし')) + '）';
+    else if (!ai) why = '';
+    else if (un) why = '色は' + (c || '白（区分なし）') + '、AI は' + aiSay;
+    else if (rep(c) !== rep(a)) why = '色は' + (c || '白（区分なし）') + '、AI は' + aiSay;
+    if (why) ask.push({ room: no, why: why, color: c, ai: !ai || (un && !a) ? '不明' : a });
   });
   return Object.assign({ date: '', legend: [], connects: [], twins: [], note: '' }, ai || {},
     { rooms: rooms, unsure: [], color: { ok: true, ask: ask, aiRead: !!ai } });
@@ -972,10 +979,9 @@ function mergeSheets_(rooms, order, dbl, color) {
     if (!c.ok) {
       v.warn.push('ダブルメイクは色で確かめられなかった' + (c.why ? '（' + c.why + '）' : '')
         + '。AI の読みだけなので、塗られたマスを AI が返し忘れても分かりません。紙と見比べてください');
-    } else if (!c.aiRead) {
-      v.warn.push('ダブルメイク指示書は AI が読めなかったので、区分はマスの色だけで決めました（ツイン・コネクト・注意書きは読めていません）');
-    } else if (c.ask.length) {
-      v.warn.push('ダブルメイク指示書：マスの色と AI の読みが違う部屋 ' + c.ask.length + '室（色のほうにしています。紙と見比べてください）：'
+    } else {
+      if (!c.aiRead) v.warn.push('ダブルメイク指示書は AI が読めなかったので、区分はマスの色だけで決めました（ツイン・コネクト・注意書きは読めていません）');
+      if (c.ask.length) v.warn.push('ダブルメイク指示書：マスの色と AI の読みが合わない・色が決まらない部屋 ' + c.ask.length + '室（色が決まった部屋は色のほうにしています。紙と見比べてください）：'
         + c.ask.map(x => x.room + '（' + x.why + '）').join('、'));
     }
   }

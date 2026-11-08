@@ -545,7 +545,8 @@ function unlock(){
   $(f).addEventListener('change', async e=>{
     const file = e.target.files[0]; e.target.value='';
     if (!file) return;
-    if (f === 'f3') DBL_COLOR = null;
+    // 選び直したら前の測定は使わない（前の測定があとから終わっても上書きしない）
+    if (f === 'f3') { DBL_TOK++; DBL_COLOR = null; DBL_P = null; }
     try {
       if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
         // PDFは縮めずにそのまま送る。スキャンなので折れ目も影も無い
@@ -576,16 +577,16 @@ function unlock(){
         if (f === 'f1') CROPS = null;
         $(p).innerHTML = '<img src="data:image/jpeg;base64,'+IMG[f]+'">';
       }
-      // ダブルメイク指示書は、AI とは別にマスの色を測る（AI の返し忘れを見つけるため）
+      // ダブルメイク指示書は、AI とは別にマスの色を測る（AI の返し忘れを見つけるため）。読み取りを送るときに待つ（DBL_P）
       if (f === 'f3') {
-        $(p).innerHTML += '<div class="fn" id="dblMsg">マスの色を測っています…</div>';
-        $('go').disabled = true;
-        const tok = ++DBL_TOK;
-        const c = await dblColorFromFile(file);
-        if (tok !== DBL_TOK) return;              // 測っている間に選び直した（あとのほうに任せる）
-        DBL_COLOR = c;
-        $('dblMsg').textContent = dblColorNote(DBL_COLOR);
-        $('dblMsg').style.color = DBL_COLOR.ok ? '#2E6A25' : '#A63D2A';
+        $(p).insertAdjacentHTML('beforeend', '<div class="fn" id="dblMsg">マスの色を測っています…</div>');
+        const tok = DBL_TOK;
+        const mine = DBL_P = dblColorFromFile(file).then(c => { if (tok === DBL_TOK) DBL_COLOR = c; return c; });
+        mine.then(c => {
+          if (DBL_P !== mine || !$('dblMsg')) return;
+          $('dblMsg').textContent = dblColorNote(c);
+          $('dblMsg').style.color = c.ok ? '#2E6A25' : '#A63D2A';
+        });
       }
       // 清掃指示書：フル清掃の黄色いマスを数える（読み取りを送るときに待って、数をサーバーへ渡す）
       if (f === 'f2') {
@@ -598,6 +599,7 @@ function unlock(){
       }
       $(s).classList.add('on');
     } catch(err){ alert('ファイルを開けませんでした'); }
+    if (READING) return;                       // 読み取り中はボタンを戻さない（二重に読まない）
     $('go').hidden = false; $('go').textContent = '読み取る';
     $('go').disabled = !(IMG.f1 && IMG.f2);
   });
@@ -606,7 +608,9 @@ function unlock(){
 const MIME = {};
 let CROPS = null;
 /** ダブルメイク指示書のマスの色（dblGridColors の結果）。読み取りのとき mergeAll に一緒に送る */
-let DBL_COLOR = null, DBL_TOK = 0;
+let DBL_COLOR = null, DBL_TOK = 0, DBL_P = null;
+/** 読み取りを送ってから結果が出るまで true（紙を選び直しても「読み取る」を戻さない） */
+let READING = false, READ_COLOR = null;
 function dblColorNote(c){
   if (!c) return '';
   if (!c.ok) return 'マスの色で読めなかった（' + (c.why || '') + '）。区分は AI だけで読みます';
@@ -800,11 +804,15 @@ async function countFullClean(file){
 /* ---------- ダブルメイク指示書の色を、画像の色で決める ----------
  * AI（Gemini）は塗られたマスを返し忘れることがある（11/7・11/8 に 204 の黄＝継続が黙って落ちた）。
  * 紙の形は決まっている（11行 12F〜02F × 17列、黒マス＝部屋なし）ので、ブラウザで画像にして各マスの色を測る。
- *  外枠：黒マス（1210・1212 が上の段、317・217 が右下、205・206・213・214 が下の段）の上・下・右と、
- *        その高さの中で色・黒の塗りが続く左端。11×17 に割る。
- *  検算：黒く塗られたマスの位置が部屋なし（DBL_BLACK）とぴったり同じでなければ使わない（格子がずれている）。
+ *  傾き：黒マスの縁（1210・1212 の上端、205・206・213・214・217 の下端、それぞれの左右の端）の傾きを測り、
+ *        画像を回して真っすぐにしてから読み直す（写真は少し傾いている）。直したあとも、表の端から端で
+ *        マスの1/6よりずれる傾き・ゆがみが残れば使わない（左下のマスを隣と取り違える。黒マスは左下に無いので検算では止まらない）。
+ *  外枠：黒マスの上・下・右と、その高さの中で色・黒の塗りが続く左端。11×17 に割る。
+ *  検算：①黒く塗られたマスの位置が部屋なし（DBL_BLACK）とぴったり同じ
+ *        ②四隅（1201・1217・201・216/417）の罫線が、割った格子の線の位置にある
+ *        どちらかがだめなら使わない（格子がずれている）。
  *  色：マスの左右の端（部屋番号の文字をよける）を2か所測り、両方同じ区分ならその区分、違えば「?」。
- * 読めなかったときは null を返さず { ok:false, why } を返す（画面に出して、AI だけで読む）。 */
+ * 読めなかったときは { ok:false, why } を返す（画面に出して、AI だけで読む）。 */
 const DBL_BLACK = ['1210', '1212', '317', '205', '206', '213', '214', '217'];
 
 /** 1マスの色（紙の白に合わせたあとの RGB）→ 区分。'' は白（区分なし）、'?' は決められない、'BLACK' は黒マス */
@@ -830,11 +838,58 @@ function dblKindOf(r, g, b){
   return '?';
 }
 
+/** 画像を th（ラジアン、時計回りに傾いている量）だけ戻した RGBA を返す。はみ出したところは白 */
+function dblRotate(px, W, H, th){
+  const out = new Uint8ClampedArray(px.length), c = Math.cos(th), s = Math.sin(th), cx = W / 2, cy = H / 2;
+  for (let y = 0; y < H; y++) {
+    const dy = y - cy;
+    for (let x = 0; x < W; x++) {
+      const dx = x - cx, sx = Math.round(cx + dx * c - dy * s), sy = Math.round(cy + dx * s + dy * c), o = (y * W + x) * 4;
+      if (sx < 0 || sy < 0 || sx >= W || sy >= H) { out[o] = out[o+1] = out[o+2] = 255; }
+      else { const i = (sy * W + sx) * 4; out[o] = px[i]; out[o+1] = px[i+1]; out[o+2] = px[i+2]; }
+      out[o+3] = 255;
+    }
+  }
+  return out;
+}
+
+/** 点の並び [[u,v],…] に v = a + k·u の直線を当てる。{ k, span } */
+function dblFit(pts){
+  const n = pts.length;
+  if (n < 5) return null;
+  let su = 0, sv = 0;
+  pts.forEach(p => { su += p[0]; sv += p[1]; });
+  const mu = su / n, mv = sv / n;
+  let a = 0, b = 0, lo = Infinity, hi = -Infinity;
+  pts.forEach(p => { a += (p[0] - mu) * (p[1] - mv); b += (p[0] - mu) * (p[0] - mu); lo = Math.min(lo, p[0]); hi = Math.max(hi, p[0]); });
+  return b ? { k: a / b, span: hi - lo } : null;
+}
+/** 重み付きの真ん中の値 */
+function dblWMed(list){
+  if (!list.length) return 0;
+  const a = list.slice().sort((p, q) => p.v - q.v), tot = a.reduce((s, x) => s + x.w, 0);
+  let s = 0;
+  for (const x of a) { s += x.w; if (s >= tot / 2) return x.v; }
+  return a[a.length - 1].v;
+}
+
 /**
  * px … RGBA の並び（ImageData.data）、W・H … 大きさ。
- * 返す：{ ok, why, map:{部屋: 区分}, odd:{部屋: 測った色}, box:[x0,y0,x1,y1] }
+ * 返す：{ ok, why, map:{部屋: 区分}, odd:{部屋: 測った色}, box:[x0,y0,x1,y1], deg:直した傾き（度） }
  */
 function dblGridColors(px, W, H){
+  // 傾いていれば回して読み直す（2回まで。大きく傾いた写真は使わない）
+  let th = 0, r = dblGridOnce(px, W, H);
+  for (let k = 0; k < 2 && r.th != null && Math.abs(r.th) > 0.0009; k++) {
+    if (Math.abs(th + r.th) > 8 * Math.PI / 180) break;
+    th += r.th;
+    r = dblGridOnce(dblRotate(px, W, H, th), W, H);
+  }
+  r.deg = Math.round((th + (r.th || 0)) * 18000 / Math.PI) / 100;
+  return r;
+}
+
+function dblGridOnce(px, W, H){
   const N = W * H;
   // 紙の白に合わせる（写真の色かぶり）。チャンネルごとに明るいほうから3%の値を 250 にそろえる
   const gain = [0, 1, 2].map(k => {
@@ -845,10 +900,11 @@ function dblGridColors(px, W, H){
     return Math.min(1.8, 250 / Math.max(v, 120));
   });
   const R = new Uint8ClampedArray(N), G = new Uint8ClampedArray(N), B = new Uint8ClampedArray(N);
-  const blk = new Uint8Array(N), fill = new Uint8Array(N);
+  const blk = new Uint8Array(N), fill = new Uint8Array(N), MX = new Uint8Array(N);
   for (let i = 0, j = 0; i < N; i++, j += 4) {
     const r = R[i] = px[j] * gain[0], g = G[i] = px[j+1] * gain[1], b = B[i] = px[j+2] * gain[2];
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    MX[i] = mx;
     if (mx < 100) blk[i] = fill[i] = 1;
     else if (mx - mn > 50) fill[i] = 1;
   }
@@ -870,26 +926,63 @@ function dblGridColors(px, W, H){
   const core = erode(erode(blk, 1, 0), 0, 1);
   // 黒マス：黒い画素のかたまりのうち、ある程度大きく、ほぼ四角く塗りつぶされたもの（文字は外れる）。画像の端に付くもの（机など）も外す
   const lab = new Int32Array(N), stack = new Int32Array(N), blobs = [];
+  let id = 0;
   for (let s = 0; s < N; s++) {
     if (!core[s] || lab[s]) continue;
+    id++;
     let sp = 0, cnt = 0, x0 = W, y0 = H, x1 = -1, y1 = -1;
-    stack[sp++] = s; lab[s] = 1;
+    stack[sp++] = s; lab[s] = id;
     while (sp) {
       const p = stack[--sp], x = p % W, y = (p - x) / W;
       cnt++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-      if (x > 0     && core[p-1] && !lab[p-1]) { lab[p-1] = 1; stack[sp++] = p-1; }
-      if (x < W - 1 && core[p+1] && !lab[p+1]) { lab[p+1] = 1; stack[sp++] = p+1; }
-      if (y > 0     && core[p-W] && !lab[p-W]) { lab[p-W] = 1; stack[sp++] = p-W; }
-      if (y < H - 1 && core[p+W] && !lab[p+W]) { lab[p+W] = 1; stack[sp++] = p+W; }
+      if (x > 0     && core[p-1] && !lab[p-1]) { lab[p-1] = id; stack[sp++] = p-1; }
+      if (x < W - 1 && core[p+1] && !lab[p+1]) { lab[p+1] = id; stack[sp++] = p+1; }
+      if (y > 0     && core[p-W] && !lab[p-W]) { lab[p-W] = id; stack[sp++] = p-W; }
+      if (y < H - 1 && core[p+W] && !lab[p+W]) { lab[p+W] = id; stack[sp++] = p+W; }
     }
-    x0 -= E; y0 -= E; x1 += E; y1 += E;
-    const w = x1 - x0 + 1, h = y1 - y0 + 1;
-    if (w < W * 0.02 || h < H * 0.02) continue;
-    if (cnt < (w - 2 * E) * (h - 2 * E) * 0.7) continue;
-    if (x0 <= 0 || y0 <= 0 || x1 >= W - 1 || y1 >= H - 1) continue;
-    blobs.push({ x0, y0, x1, y1, w, h });
+    const b = { id, cx0: x0, cy0: y0, cx1: x1, cy1: y1, x0: x0 - E, y0: y0 - E, x1: x1 + E, y1: y1 + E };
+    b.w = b.x1 - b.x0 + 1; b.h = b.y1 - b.y0 + 1;
+    if (b.w < W * 0.02 || b.h < H * 0.02) continue;
+    if (cnt < (b.w - 2 * E) * (b.h - 2 * E) * 0.7) continue;
+    if (b.x0 <= 0 || b.y0 <= 0 || b.x1 >= W - 1 || b.y1 >= H - 1) continue;
+    blobs.push(b);
   }
   if (blobs.length < 3) return { ok: false, why: '黒マスが見つからない（' + blobs.length + 'か所）' };
+
+  // 黒マスの縁の点（角はよける）。横の縁は上端・下端、縦の縁は左端・右端
+  blobs.forEach(b => {
+    const at = (x, y) => lab[y * W + x] === b.id;
+    const mw = Math.round((b.cx1 - b.cx0) * 0.15), mh = Math.round((b.cy1 - b.cy0) * 0.15);
+    b.top = []; b.bot = []; b.lef = []; b.rig = [];
+    for (let x = b.cx0 + mw; x <= b.cx1 - mw; x++) {
+      let y = b.cy0; while (y <= b.cy1 && !at(x, y)) y++; if (y <= b.cy1) b.top.push([x, y]);
+      y = b.cy1; while (y >= b.cy0 && !at(x, y)) y--; if (y >= b.cy0) b.bot.push([x, y]);
+    }
+    for (let y = b.cy0 + mh; y <= b.cy1 - mh; y++) {
+      let x = b.cx0; while (x <= b.cx1 && !at(x, y)) x++; if (x <= b.cx1) b.lef.push([y, x]);
+      x = b.cx1; while (x >= b.cx0 && !at(x, y)) x--; if (x >= b.cx0) b.rig.push([y, x]);
+    }
+  });
+  // 傾き：まず縁ごとの傾きの真ん中、次に同じ横の線に乗る縁（02F の下端・12F の上端）をまとめて当てる
+  const hs = [], vs = [];
+  blobs.forEach(b => {
+    [b.top, b.bot].forEach(p => { const f = dblFit(p); if (f && f.span >= 15) hs.push({ v: Math.atan(f.k), w: f.span }); });
+    [b.lef, b.rig].forEach(p => { const f = dblFit(p); if (f && f.span >= 15) vs.push({ v: -Math.atan(f.k), w: f.span }); });
+  });
+  let thH = dblWMed(hs);
+  const hmin = Math.min(...blobs.map(b => b.cy1 - b.cy0 + 1));
+  const line = (key, pick) => {
+    const t = Math.tan(thH), med = b => { const a = b[key].map(p => p[1] - t * p[0]).sort((p, q) => p - q); return a.length ? a[a.length >> 1] : null; };
+    const m = blobs.map(b => ({ b, r: med(b) })).filter(x => x.r != null);
+    if (!m.length) return null;
+    const best = pick(...m.map(x => x.r));
+    const pts = [].concat(...m.filter(x => Math.abs(x.r - best) < hmin * 0.4).map(x => x.b[key]));
+    return dblFit(pts);
+  };
+  const fb = line('bot', Math.max), ft = line('top', Math.min), joint = [fb, ft].filter(f => f && f.span >= 30);
+  if (joint.length) thH = joint.reduce((s, f) => s + Math.atan(f.k) * f.span, 0) / joint.reduce((s, f) => s + f.span, 0);
+  const thV = dblWMed(vs);
+
   const top = Math.min(...blobs.map(b => b.y0)), bot = Math.max(...blobs.map(b => b.y1)) + 1;
   const right = Math.max(...blobs.map(b => b.x1)) + 1;
   const rh = (bot - top) / 11;
@@ -905,7 +998,46 @@ function dblGridColors(px, W, H){
     else if (++gap > cwGuess * 0.5) break;
   }
   const cw = (right - left) / 17;
-  if (cw < 4 || rh < 4 || cw / rh < 0.7 || cw / rh > 3) return { ok: false, why: '外枠の形がおかしい' };
+  const box = [left, top, right, bot].map(Math.round);
+  if (cw < 4 || rh < 4 || cw / rh < 0.7 || cw / rh > 3) return { ok: false, why: '外枠の形がおかしい', th: thH, box };
+
+  // 傾き・ゆがみが残っていれば使わない（表の端から端で、マスの1/6よりずれる）
+  const shiftH = 17 * cw * Math.abs(Math.tan(thH)), shiftV = 11 * rh * Math.abs(Math.tan(thV));
+  const deg = v => Math.round(v * 1800 / Math.PI) / 10;
+  if (shiftH > rh / 6 || shiftV > cw / 6)
+    return { ok: false, why: '傾き・ゆがみが大きい（横 ' + deg(thH) + '°・縦 ' + deg(thV) + '°）', th: thH, box };
+
+  // 四隅の罫線が、割った格子の線の位置にあるか（マスの1/6まで）
+  // 線に沿った明るさの平均がいちばん暗い位置を探し、まわり（真ん中の値）より 35 以上暗ければ線とみる（写真のぼけ・照明でも）
+  const lineAt = (horiz, pos, a0, a1) => {             // horiz：横線を pos の近くで探す。a0〜a1 は線に沿った範囲
+    const span = horiz ? rh : cw, lo = Math.round(pos - span * 0.3), hi = Math.round(pos + span * 0.3);
+    const prof = [];
+    for (let q = lo; q <= hi; q++) {
+      let n = 0, m = 0;
+      for (let t = Math.round(a0); t < Math.round(a1); t++) {
+        const x = horiz ? t : q, y = horiz ? q : t;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        m++; n += MX[y * W + x];
+      }
+      prof.push(m ? n / m : 255);
+    }
+    let bi = 0; prof.forEach((v, i) => { if (v < prof[bi]) bi = i; });
+    const mid = prof.slice().sort((p, q) => p - q)[prof.length >> 1];
+    return mid - prof[bi] >= 35 && Math.abs(lo + bi - pos) <= span / 6;
+  };
+  const X = c => left + c * cw, Y = r => top + r * rh;
+  const corners = [
+    ['1201上', true,  Y(0),  X(0) + cw * 0.08,  X(0) + cw * 0.3],
+    ['1201左', false, X(0),  Y(0) + rh * 0.2,   Y(0) + rh * 0.8],
+    ['1217上', true,  Y(0),  X(16) + cw * 0.7,  X(16) + cw * 0.92],
+    ['1217右', false, X(17), Y(0) + rh * 0.2,   Y(0) + rh * 0.8],
+    ['201下',  true,  Y(11), X(0) + cw * 0.08,  X(0) + cw * 0.3],
+    ['201左',  false, X(0),  Y(10) + rh * 0.2,  Y(10) + rh * 0.8],
+    ['216下',  true,  Y(11), X(15) + cw * 0.7,  X(15) + cw * 0.92],
+    ['417右',  false, X(17), Y(8) + rh * 0.2,   Y(8) + rh * 0.8]
+  ];
+  const noLine = corners.filter(c => !lineAt(c[1], c[2], c[3], c[4])).map(c => c[0]);
+  if (noLine.length) return { ok: false, why: '四隅の罫線が格子と合わない（' + noLine.join('・') + '）', th: thH, box };
 
   // マスごとに、左右の端の2か所の色を測る（中央の部屋番号をよける）
   const med = (x0, x1, y0, y1) => {
@@ -918,7 +1050,7 @@ function dblGridColors(px, W, H){
   const map = {}, odd = {}, black = [];
   for (let ri = 0; ri < 11; ri++) for (let ci = 0; ci < 17; ci++) {
     const room = String((12 - ri) * 100 + ci + 1);
-    const xa = left + ci * cw, ya = top + ri * rh;
+    const xa = X(ci), ya = Y(ri);
     const p1 = med(xa + cw * 0.07, xa + cw * 0.27, ya + rh * 0.2, ya + rh * 0.8);
     const p2 = med(xa + cw * 0.73, xa + cw * 0.93, ya + rh * 0.2, ya + rh * 0.8);
     const k1 = dblKindOf(...p1), k2 = dblKindOf(...p2);
@@ -927,20 +1059,21 @@ function dblGridColors(px, W, H){
     map[room] = k1 === k2 ? k1 : '?';
     if (map[room] === '?') odd[room] = p1.join(',') + '/' + p2.join(',');
   }
-  const box = [left, top, right, bot].map(Math.round);
   const miss = DBL_BLACK.filter(r => black.indexOf(r) < 0), extra = black.filter(r => DBL_BLACK.indexOf(r) < 0);
   if (miss.length || extra.length)
     return { ok: false, why: '黒マスの位置が合わない（' + (miss.length ? '黒くない:' + miss.join('・') : '')
-      + (extra.length ? ' 黒い:' + extra.join('・') : '') + '）', box };
+      + (extra.length ? ' 黒い:' + extra.join('・') : '') + '）', th: thH, box };
   const unk = Object.keys(map).filter(r => map[r] === '?');
-  if (unk.length > 10) return { ok: false, why: '色が決まらないマスが多い（' + unk.length + '室）', box, odd };
-  return { ok: true, map, odd, box };
+  if (unk.length > 10) return { ok: false, why: '色が決まらないマスが多い（' + unk.length + '室）', th: thH, box, odd };
+  return { ok: true, map, odd, box, th: thH };
 }
 /* DBL_COLOR_END */
 
-/** ダブルメイク指示書のファイル（PDF・写真）を画像にして色を測る。だめなら { ok:false, why } */
-async function dblColorFromFile(file){
-  try {
+/** ダブルメイク指示書のファイル（PDF・写真）を画像にして色を測る。だめなら { ok:false, why }。
+ * pdf.js が読み込めない・止まったときに「読み取る」が押せないままにならないよう、ms（15秒）で切る */
+async function dblColorFromFile(file, ms){
+  let url = '';
+  const work = (async () => {
     const LONG = 1600;                                  // 長い辺。マス1つが横 90px 前後になる
     const cv = document.createElement('canvas');
     if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
@@ -957,7 +1090,7 @@ async function dblColorFromFile(file){
       const img = await new Promise((res, rej) => {
         const im = new Image();
         im.onload = () => res(im); im.onerror = () => rej(new Error('img'));
-        im.src = URL.createObjectURL(file);
+        im.src = url = URL.createObjectURL(file);
       });
       const s = Math.min(1, LONG / Math.max(img.width, img.height));
       cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
@@ -965,9 +1098,12 @@ async function dblColorFromFile(file){
     }
     const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
     return dblGridColors(d.data, cv.width, cv.height);
-  } catch(e){
-    return { ok: false, why: '画像にできなかった' };
-  }
+  })();
+  work.catch(() => {});
+  const late = new Promise(res => setTimeout(() => res({ ok: false, why: '時間切れ（画像にできなかった）' }), ms || 15000));
+  try { return await Promise.race([work, late]); }
+  catch(e){ return { ok: false, why: '画像にできなかった' }; }
+  finally { if (url) URL.revokeObjectURL(url); }
 }
 
 /** ファイルをそのまま base64 にする（PDF用） */
@@ -997,9 +1133,20 @@ function shrink(file, max){
 
 let USE = null;
 async function read(){
+  if (READING) return;                       // 二重に押しても1回だけ
+  READING = true;
   $('go').disabled = true; $('go').innerHTML = '<span class="spin"></span>読み取り中…'; $('bars').innerHTML='';
   // フル清掃の黄色いマスの数（数え終わるのを待つ。10秒たっても終わらなければ数えられなかったことにする）
-  const full = FULL_P ? await Promise.race([FULL_P, new Promise(res => setTimeout(() => res(null), 10000))]) : null;
+  const fullP = FULL_P ? Promise.race([FULL_P, new Promise(res => setTimeout(() => res(null), 10000))]) : null;
+  // ダブルメイク指示書のマスの色（測り終わるのを待つ。待っている間に選び直したら、新しいほうを待つ）
+  let color = null;
+  for (;;) {
+    const t = DBL_TOK;
+    color = DBL_P ? await Promise.race([DBL_P, new Promise(res => setTimeout(() => res({ ok: false, why: '時間切れ' }), 20000))]) : null;
+    if (t === DBL_TOK) break;
+  }
+  const full = fullP ? await fullP : null;
+  READ_COLOR = IMG.f3 ? (color || { ok: false, why: '色を測っていない' }) : null;
   // 3枚は関係がないので同時に読む（待ち時間 = いちばん遅い1枚ぶん）
   const t0 = Date.now();
   const jobs = [
@@ -1042,16 +1189,17 @@ function finish(ind, ord, dbl){
   say('突き合わせ中…');
   const keep = $('bars').innerHTML;   // ダブルメイクが読めなかった知らせは残す
   FINISH_NOTE = keep;
-  // ダブルメイク指示書を選んだときは、マスの色の測定も送る（測れなかったときも理由を送り、画面に出す）
-  const color = IMG.f3 ? (DBL_COLOR || { ok: false, why: '色を測っていない' }) : null;
+  // ダブルメイク指示書を選んだときは、マスの色の測定も送る（測れなかったときも理由を送り、画面に出す）。
+  // 読み取りを送ったときの紙の測定（READ_COLOR）を使う（あとから選び直した紙の色と混ぜない）
   adminRun().withSuccessHandler(show).withFailureHandler(fail)
-    .mergeAll(ind, ord, dbl, color);
+    .mergeAll(ind, ord, dbl, READ_COLOR);
 }
 
 function say(t){ $('ocrMsg').innerHTML = '<span class="spin"></span>'+esc(t); }
-function fail(e){ $('go').hidden = false; $('go').textContent = '読み取る'; $('go').disabled=!(IMG.f1 && IMG.f2); $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
+function fail(e){ READING = false; $('go').hidden = false; $('go').textContent = '読み取る'; $('go').disabled=!(IMG.f1 && IMG.f2); $('ocrMsg').textContent = '読み取れませんでした\n'+(e.message||''); }
 
 function show(res){
+  READING = false;
   // 読み終えたらボタンは隠す（同じ紙をもう一度読まないように）。紙を選び直すとまた出る
   $('go').hidden = true; $('go').textContent = '読み取る'; $('go').disabled = false;
   ROWS = res.rooms; ORDER = res.order; DBL = res.dbl || null;
@@ -1102,7 +1250,7 @@ function show(res){
     const c = d.color || {};
     $('ord').innerHTML += '<div style="margin-top:10px"><b style="min-width:0">ダブルメイク指示書</b></div>'
       + '<div style="color:' + (c.ok ? '#2E6A25' : '#A63D2A') + '">' + esc(c.ok
-          ? 'マスの色で決めました' + (c.aiRead ? '（AI の読みと違う・AI が返さなかった部屋 ' + (c.ask || []).length + '室）' : '（AI は読めなかった）')
+          ? 'マスの色で決めました' + (c.aiRead ? '（要確認 ' + (c.ask || []).length + '室：AI の読みと合わない・色が決まらない）' : '（AI は読めなかった。色が決まらない ' + (c.ask || []).length + '室）')
           : 'マスの色で確かめられなかったので AI の読みだけです') + '</div>'
       + Object.keys(byKind).map(k =>
           '<div><b>'+esc(dmakeLabel(k))+'</b>'+byKind[k].length+'室：'+esc(byKind[k].join('、'))+'</div>').join('')
@@ -1183,8 +1331,8 @@ function drawRows(){
         // マスの色と AI の読みが違った部屋は、紙を見て選び直せるようにする（最初は色のほう）
         ? '<div class="flagline"><b>Wメイク</b>　<select onchange="setDmake('+i+',this.value)">'
           + DMAKE_PICK.map(k=>'<option value="'+esc(k)+'"'+((r.dmake||'')===k?' selected':'')+'>'
-            + (k ? esc(dmakeLabel(k)) : 'なし（白）') + (k === (r.dmakeAi||'') ? '　← AI の読み' : '') + '</option>').join('')
-          + '</select></div>'
+            + (k ? esc(dmakeLabel(k)) : 'なし（白）') + (r.dmakeAi !== '不明' && k === (r.dmakeAi||'') ? '　← AI の読み' : '') + '</option>').join('')
+          + '</select>' + (r.dmakeAi === '不明' ? '　AI は読めなかった' : '') + '</div>'
         : (r.dmake ? '<div class="flagline" style="color:'+(r.dmake === '解除' ? '#A63D2A' : '#8A5300')+'"><b>Wメイク</b>　'+esc(dmakeLabel(r.dmake))+'</div>' : ''))
     + (r.note ? '<div class="flagline" style="color:var(--muted)">'+esc(r.note)+'</div>' : '')
     + (needCheck(r)
