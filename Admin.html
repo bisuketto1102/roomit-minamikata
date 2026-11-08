@@ -545,6 +545,9 @@ function unlock(){
   $(f).addEventListener('change', async e=>{
     const file = e.target.files[0]; e.target.value='';
     if (!file) return;
+    // 読み取り中（色・黄色の数えを待っている間も）は紙を選び直させない。
+    // 選び直すと、送る紙と測った色・数が別の紙になる（最終確認で見つかった：数は前の紙、紙は新しい紙）
+    if (READING) { alert('読み取り中です。終わってから選び直してください。'); return; }
     // 選び直したら前の測定は使わない（前の測定があとから終わっても上書きしない）
     if (f === 'f3') { DBL_TOK++; DBL_COLOR = null; DBL_P = null; }
     try {
@@ -940,7 +943,7 @@ function dblGridOnce(px, W, H){
   for (let i = 0, j = 0; i < N; i++, j += 4) {
     const r = R[i] = px[j] * gain[0], g = G[i] = px[j+1] * gain[1], b = B[i] = px[j+2] * gain[2];
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-    MX[i] = mx;
+    MX[i] = Math.min(255, mx);   // Uint8Array なので 255 を超えると小さい値に化ける
     if (mx < 100) blk[i] = fill[i] = 1;
     else if (mx - mn > 50) fill[i] = 1;
   }
