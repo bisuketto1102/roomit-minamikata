@@ -690,16 +690,17 @@ function doubleSchema_() {
   };
 }
 
+/** ピンク（増設セット解除→ベッド下収納常設部屋に変更）は今日シングルに戻すので解除にする。AI の読みも色の測定も同じにそろえる */
+const DMAKE_ALIAS = { '解除→ベッド下収納': '解除', '増設解除して増設予定': '解除', 'ベッド下収納常設': 'ベッド下収納' };
+
 function normDouble_(p) {
   const pairs = a => (Array.isArray(a) ? a : [])
     .map(x => (Array.isArray(x) ? x : []).map(y => String(y).replace(/[^0-9]/g, '')).filter(Boolean))
     .filter(x => x.length >= 2);
 
-  // ピンク（増設セット解除→ベッド下収納常設部屋に変更）は今日シングルに戻すので解除にする
-  const ALIAS = { '解除→ベッド下収納': '解除', '増設解除して増設予定': '解除', 'ベッド下収納常設': 'ベッド下収納' };
   const unsure = [];
   const rooms = (Array.isArray(p.rooms) ? p.rooms : []).map(r => {
-    const raw = String(r.kind || '').trim(), kind = raw === '不明' ? '' : (ALIAS[raw] || raw);
+    const raw = String(r.kind || '').trim(), kind = raw === '不明' ? '' : (DMAKE_ALIAS[raw] || raw);
     const room = String(r.room || '').replace(/[^0-9]/g, '');
     if (room && (!kind || (Array.isArray(r.uncertain) && r.uncertain.indexOf('kind') >= 0))) unsure.push(room);
     return { room: room, kind: DMAKE_KINDS.indexOf(kind) >= 0 ? kind : '', from: raw };
@@ -714,6 +715,62 @@ function normDouble_(p) {
     twins: pairs(p.twins),
     note: String(p.note || '').trim()
   };
+}
+
+/*
+ * ダブルメイク指示書の色を、画像の色で決めたもの（管理画面の dblGridColors が作る）。
+ * AI は塗られたマスを返し忘れることがある（11/7・11/8 に 204 の黄＝継続が黙って落ちた）。
+ * 紙の形は決まっている（11行×17列・黒マス＝部屋なし）ので、画面で各マスの色を測って送ってくる。
+ *   { ok:true, map:{ 部屋: 区分 } } … 区分は DMAKE_READ の言葉、''＝白（区分なし）、'?'＝色を決められないマス
+ *   { ok:false, why } …………………… 外枠が見つからない・黒マスの位置が部屋なしと合わない など
+ * 部屋が1つでも欠けていたら使わない（全部の部屋を測れていないと「AI が返さなかった」を見分けられない）。
+ */
+function normDblColor_(c) {
+  if (!c || typeof c !== 'object') return null;
+  if (!c.ok) return { ok: false, why: String(c.why || '').slice(0, 200) };
+  const src = (c.map && typeof c.map === 'object') ? c.map : {};
+  const map = {};
+  let n = 0;
+  ROOMS.forEach(no => {
+    if (!Object.prototype.hasOwnProperty.call(src, no)) return;
+    let k = String(src[no] == null ? '' : src[no]).trim();
+    k = DMAKE_ALIAS[k] || k;
+    if (k !== '' && k !== '?' && DMAKE_KINDS.indexOf(k) < 0) k = '?';
+    map[no] = k; n++;
+  });
+  if (n < ROOMS.length) return { ok: false, why: '色の一覧に足りない部屋がある（' + n + '／' + ROOMS.length + '室）' };
+  return { ok: true, map: map };
+}
+
+/**
+ * 色を正にしてダブルメイクの区分を決める。ai は readDouble_ の結果（読めなかったら null）。
+ * 人の確認（ask）に回すのは次の3つだけ。色と AI が同じ部屋・どちらも白の部屋は何も出さない。
+ *   ・色と AI の区分が違う（赤とピンクはどちらも「解除」にそろえてから比べるので、その取り違えは出ない）
+ *   ・色では区分ありなのに AI が返さなかった（AI が「不明」と返したものも含む）
+ *   ・色を決められなかったマス（区分は AI の読みのまま）
+ * AI が読めなかった日は比べようがないので、色だけで決めて何も出さない。
+ * ツイン・コネクト・注意書き・凡例は AI の読みのまま。
+ */
+function dblByColor_(ai, col) {
+  const aiKind = {}, aiUnsure = {};
+  if (ai) {
+    (ai.rooms || []).forEach(x => { aiKind[x.room] = x.kind; });
+    (ai.unsure || []).forEach(no => { aiUnsure[no] = 1; });
+  }
+  const rooms = [], ask = [];
+  ROOMS.forEach(no => {
+    const c = col.map[no], a = aiKind[no] || '';
+    const kind = c === '?' ? a : c;
+    if (kind) rooms.push({ room: no, kind: kind, from: c === '?' ? 'AI' : '色' });
+    if (!ai) return;
+    let why = '';
+    if (c === '?') why = '色が決められない（AI は' + (a || (aiUnsure[no] ? '不明' : '区分なし')) + '）';
+    else if (c && !a) why = '色は' + c + '、AI は' + (aiUnsure[no] ? '不明' : '返さなかった');
+    else if (c !== a) why = '色は' + (c || '白（区分なし）') + '、AI は' + a;
+    if (why) ask.push({ room: no, why: why, color: c, ai: a });
+  });
+  return Object.assign({ date: '', legend: [], connects: [], twins: [], note: '' }, ai || {},
+    { rooms: rooms, unsure: [], color: { ok: true, ask: ask, aiRead: !!ai } });
 }
 
 
@@ -785,8 +842,13 @@ function applyOrderRules_(rooms, order) {
   return fixed;
 }
 
-function mergeSheets_(rooms, order, dbl) {
+function mergeSheets_(rooms, order, dbl, color) {
   const ruled = applyOrderRules_(rooms, order);
+
+  // ダブルメイク指示書は、画面で色を測れていれば色を正にする（AI が読めなかった日も色だけで決める）
+  const col = normDblColor_(color);
+  if (col && col.ok) dbl = dblByColor_(dbl || null, col);
+  else if (dbl) dbl = Object.assign({}, dbl, { color: { ok: false, why: col ? col.why : '' } });
 
   const byRoom = {};
   rooms.forEach(r => { byRoom[r.room] = r; });
@@ -871,7 +933,15 @@ function mergeSheets_(rooms, order, dbl) {
     const by = {};
     rooms.forEach(r => { by[r.room] = r; });
     dbl.rooms.forEach(x => { if (by[x.room]) by[x.room].dmake = x.kind; });
-    // 色を決められなかった部屋だけ要確認に回す（赤とピンクはどちらも解除なので、取り違えても結果は同じ）
+    // 色と AI が食い違った部屋などは要確認に回し、AI の読みも残す（管理画面で選び直せるように）
+    if (dbl.color.ok) dbl.color.ask.forEach(x => {
+      const r = by[x.room];
+      if (!r) return;
+      const why = 'ダブルメイク：' + x.why;
+      if (r.uncertain.indexOf(why) < 0) r.uncertain.push(why);
+      r.dmakeAsk = true; r.dmakeAi = x.ai;
+    });
+    // 色を測れなかった日は、AI が色を決められなかった部屋だけ要確認に回す（赤とピンクはどちらも解除なので、取り違えても結果は同じ）
     (dbl.unsure || []).forEach(no => {
       const r = by[no];
       if (r && r.uncertain.indexOf('ダブルメイク指示書の色が読めなかった') < 0) r.uncertain.push('ダブルメイク指示書の色が読めなかった');
@@ -889,6 +959,16 @@ function mergeSheets_(rooms, order, dbl) {
     const rel = rooms.filter(r => r.dmake === '解除').map(r => r.room).sort(cmpRoomNo_);
     if (rel.length) v.warn.push('今日シングルに戻す部屋（赤の解除・ピンクの増設セット解除）' + rel.length + '室：' + rel.join('、'));
     if ((dbl.unsure || []).length) v.warn.push('ダブルメイク指示書で色が読めなかった部屋：' + dbl.unsure.join('、'));
+    const c = dbl.color;
+    if (!c.ok) {
+      v.warn.push('ダブルメイクは色で確かめられなかった' + (c.why ? '（' + c.why + '）' : '')
+        + '。AI の読みだけなので、塗られたマスを AI が返し忘れても分かりません。紙と見比べてください');
+    } else if (!c.aiRead) {
+      v.warn.push('ダブルメイク指示書は AI が読めなかったので、区分はマスの色だけで決めました（ツイン・コネクト・注意書きは読めていません）');
+    } else if (c.ask.length) {
+      v.warn.push('ダブルメイク指示書：マスの色と AI の読みが違う部屋 ' + c.ask.length + '室（色のほうにしています。紙と見比べてください）：'
+        + c.ask.map(x => x.room + '（' + x.why + '）').join('、'));
+    }
   }
   return { rooms: rooms, order: order, ruled: ruled, dbl: dbl || null,
            verify: v };
@@ -997,11 +1077,11 @@ function verify_(rooms, order, orphan, ruled) {
 }
 
 /** 集計ボックスを検算に渡すための入口 */
-function mergeAll_(indicator, order, dbl) {
+function mergeAll_(indicator, order, dbl, color) {
   const o = order;
   o.__box   = indicator.counts;
   o.__cross = indicator.cross || {};
-  return mergeSheets_(indicator.rooms, o, dbl || null);
+  return mergeSheets_(indicator.rooms, o, dbl || null, color || null);
 }
 
 

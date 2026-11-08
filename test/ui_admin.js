@@ -42,6 +42,9 @@ const { page } = require('./pagegen.js');
   await pg.waitForFunction(() => !document.getElementById('cropMsg') && document.querySelectorAll('#p1 img').length === 2, null, { timeout: 30000 });
   await pg.setInputFiles('#f2', __dirname + '/pdf0929/order_0929.pdf'); await pg.setInputFiles('#f3', __dirname + '/pdf0929/double_0929.pdf');
   await pg.waitForTimeout(500);
+  // ダブルメイク指示書はマスの色を測り終えるまで「読み取る」を押せない
+  await pg.waitForFunction(() => { const m = document.getElementById('dblMsg'); return m && !/測っています/.test(m.textContent); }, null, { timeout: 30000 });
+  console.log('dbl color:', await pg.textContent('#dblMsg'));
   console.log('go disabled:', await pg.isDisabled('#go'));
   await pg.click('#go');
   await pg.waitForFunction(() => /室を読み取り/.test(document.getElementById('ocrMsg').textContent), null, { timeout: 30000 });

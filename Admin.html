@@ -545,6 +545,7 @@ function unlock(){
   $(f).addEventListener('change', async e=>{
     const file = e.target.files[0]; e.target.value='';
     if (!file) return;
+    if (f === 'f3') DBL_COLOR = null;
     try {
       if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
         // PDFは縮めずにそのまま送る。スキャンなので折れ目も影も無い
@@ -575,6 +576,17 @@ function unlock(){
         if (f === 'f1') CROPS = null;
         $(p).innerHTML = '<img src="data:image/jpeg;base64,'+IMG[f]+'">';
       }
+      // ダブルメイク指示書は、AI とは別にマスの色を測る（AI の返し忘れを見つけるため）
+      if (f === 'f3') {
+        $(p).innerHTML += '<div class="fn" id="dblMsg">マスの色を測っています…</div>';
+        $('go').disabled = true;
+        const tok = ++DBL_TOK;
+        const c = await dblColorFromFile(file);
+        if (tok !== DBL_TOK) return;              // 測っている間に選び直した（あとのほうに任せる）
+        DBL_COLOR = c;
+        $('dblMsg').textContent = dblColorNote(DBL_COLOR);
+        $('dblMsg').style.color = DBL_COLOR.ok ? '#2E6A25' : '#A63D2A';
+      }
       $(s).classList.add('on');
     } catch(err){ alert('ファイルを開けませんでした'); }
     $('go').hidden = false; $('go').textContent = '読み取る';
@@ -584,6 +596,15 @@ function unlock(){
 
 const MIME = {};
 let CROPS = null;
+/** ダブルメイク指示書のマスの色（dblGridColors の結果）。読み取りのとき mergeAll に一緒に送る */
+let DBL_COLOR = null, DBL_TOK = 0;
+function dblColorNote(c){
+  if (!c) return '';
+  if (!c.ok) return 'マスの色で読めなかった（' + (c.why || '') + '）。区分は AI だけで読みます';
+  const ks = Object.keys(c.map);
+  const n = ks.filter(k => c.map[k] && c.map[k] !== '?').length, q = ks.filter(k => c.map[k] === '?').length;
+  return 'マスの色で読めた（区分あり ' + n + '室' + (q ? '・色が決まらない ' + q + '室' : '') + '）';
+}
 
 /* ---------- インジケーター PDF → 表だけの画像2枚 ----------
  * PDF のまま送ると Gemini がページ全体を小さく縮めて読むので、SD と D の文字がつぶれやすい。
@@ -651,6 +672,180 @@ async function cropIndicator(file){
   return [cut(y0, y0 + h * 0.70), cut(y0 + h * 0.60, y1)];
 }
 
+
+/* DBL_COLOR_BEGIN */
+/* ---------- ダブルメイク指示書の色を、画像の色で決める ----------
+ * AI（Gemini）は塗られたマスを返し忘れることがある（11/7・11/8 に 204 の黄＝継続が黙って落ちた）。
+ * 紙の形は決まっている（11行 12F〜02F × 17列、黒マス＝部屋なし）ので、ブラウザで画像にして各マスの色を測る。
+ *  外枠：黒マス（1210・1212 が上の段、317・217 が右下、205・206・213・214 が下の段）の上・下・右と、
+ *        その高さの中で色・黒の塗りが続く左端。11×17 に割る。
+ *  検算：黒く塗られたマスの位置が部屋なし（DBL_BLACK）とぴったり同じでなければ使わない（格子がずれている）。
+ *  色：マスの左右の端（部屋番号の文字をよける）を2か所測り、両方同じ区分ならその区分、違えば「?」。
+ * 読めなかったときは null を返さず { ok:false, why } を返す（画面に出して、AI だけで読む）。 */
+const DBL_BLACK = ['1210', '1212', '317', '205', '206', '213', '214', '217'];
+
+/** 1マスの色（紙の白に合わせたあとの RGB）→ 区分。'' は白（区分なし）、'?' は決められない、'BLACK' は黒マス */
+function dblKindOf(r, g, b){
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), c = mx - mn;
+  if (mx < 100) return 'BLACK';
+  if (c < 40) return mx > 185 ? '' : '?';               // 白（影で灰色になったものは決めない）
+  let h;                                                // 色相 0〜360
+  if (mx === r) h = 60 * (((g - b) / c) % 6);
+  else if (mx === g) h = 60 * ((b - r) / c + 2);
+  else h = 60 * ((r - g) / c + 4);
+  if (h < 0) h += 360;
+  const s = c / mx;
+  if (h >= 190 && h <= 250) return 'ベッド下収納';         // 青
+  if (h >= 85 && h < 175) return '新規';                  // 緑
+  if (h >= 46 && h < 75 && s > 0.45) return '継続';        // 黄
+  // 赤い系：オレンジ（常設）は緑が青より強い。ピンク・サーモンは緑と青が同じくらい。赤は濃い
+  if (h >= 345 || h < 46) {
+    if (g - b >= 22 && h >= 14) return '常設';            // オレンジ・茶
+    if (s >= 0.62) return '解除';                         // 赤（濃い）
+    if (s >= 0.12 && Math.abs(g - b) < 30) return '解除→ベッド下収納';   // 薄ピンク・サーモン
+  }
+  return '?';
+}
+
+/**
+ * px … RGBA の並び（ImageData.data）、W・H … 大きさ。
+ * 返す：{ ok, why, map:{部屋: 区分}, odd:{部屋: 測った色}, box:[x0,y0,x1,y1] }
+ */
+function dblGridColors(px, W, H){
+  const N = W * H;
+  // 紙の白に合わせる（写真の色かぶり）。チャンネルごとに明るいほうから3%の値を 250 にそろえる
+  const gain = [0, 1, 2].map(k => {
+    const hist = new Uint32Array(256);
+    for (let i = k; i < px.length; i += 16) hist[px[i]]++;
+    let n = 0, want = Math.ceil(px.length / 16 * 0.03), v = 255;
+    for (; v > 0; v--) { n += hist[v]; if (n >= want) break; }
+    return Math.min(1.8, 250 / Math.max(v, 120));
+  });
+  const R = new Uint8ClampedArray(N), G = new Uint8ClampedArray(N), B = new Uint8ClampedArray(N);
+  const blk = new Uint8Array(N), fill = new Uint8Array(N);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const r = R[i] = px[j] * gain[0], g = G[i] = px[j+1] * gain[1], b = B[i] = px[j+2] * gain[2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx < 100) blk[i] = fill[i] = 1;
+    else if (mx - mn > 50) fill[i] = 1;
+  }
+
+  // 罫線・文字の細い線を落とす（縦横 E 画素ずつ削る）。黒マスは大きいので残る
+  const E = Math.max(2, Math.round(Math.min(W, H) / 400));
+  const erode = (src, dx, dy) => {
+    const out = new Uint8Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let ok = 1;
+      for (let d = -E; d <= E && ok; d++) {
+        const xx = x + d * dx, yy = y + d * dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H || !src[yy * W + xx]) ok = 0;
+      }
+      out[y * W + x] = ok;
+    }
+    return out;
+  };
+  const core = erode(erode(blk, 1, 0), 0, 1);
+  // 黒マス：黒い画素のかたまりのうち、ある程度大きく、ほぼ四角く塗りつぶされたもの（文字は外れる）。画像の端に付くもの（机など）も外す
+  const lab = new Int32Array(N), stack = new Int32Array(N), blobs = [];
+  for (let s = 0; s < N; s++) {
+    if (!core[s] || lab[s]) continue;
+    let sp = 0, cnt = 0, x0 = W, y0 = H, x1 = -1, y1 = -1;
+    stack[sp++] = s; lab[s] = 1;
+    while (sp) {
+      const p = stack[--sp], x = p % W, y = (p - x) / W;
+      cnt++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (x > 0     && core[p-1] && !lab[p-1]) { lab[p-1] = 1; stack[sp++] = p-1; }
+      if (x < W - 1 && core[p+1] && !lab[p+1]) { lab[p+1] = 1; stack[sp++] = p+1; }
+      if (y > 0     && core[p-W] && !lab[p-W]) { lab[p-W] = 1; stack[sp++] = p-W; }
+      if (y < H - 1 && core[p+W] && !lab[p+W]) { lab[p+W] = 1; stack[sp++] = p+W; }
+    }
+    x0 -= E; y0 -= E; x1 += E; y1 += E;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    if (w < W * 0.02 || h < H * 0.02) continue;
+    if (cnt < (w - 2 * E) * (h - 2 * E) * 0.7) continue;
+    if (x0 <= 0 || y0 <= 0 || x1 >= W - 1 || y1 >= H - 1) continue;
+    blobs.push({ x0, y0, x1, y1, w, h });
+  }
+  if (blobs.length < 3) return { ok: false, why: '黒マスが見つからない（' + blobs.length + 'か所）' };
+  const top = Math.min(...blobs.map(b => b.y0)), bot = Math.max(...blobs.map(b => b.y1)) + 1;
+  const right = Math.max(...blobs.map(b => b.x1)) + 1;
+  const rh = (bot - top) / 11;
+  const cwGuess = Math.min(...blobs.map(b => b.w));
+
+  // 左端：右から左へ、どれかの段の高さの6割以上が塗られている列をたどる。マス半分より長く途切れたら止める
+  const band = new Int32Array(11);
+  let left = right, gap = 0;
+  for (let x = right - 1; x >= 0; x--) {
+    band.fill(0);
+    for (let y = top; y < bot; y++) if (fill[y * W + x]) band[Math.min(10, Math.floor((y - top) / rh))]++;
+    if (Math.max(...band) >= rh * 0.6) { left = x; gap = 0; }
+    else if (++gap > cwGuess * 0.5) break;
+  }
+  const cw = (right - left) / 17;
+  if (cw < 4 || rh < 4 || cw / rh < 0.7 || cw / rh > 3) return { ok: false, why: '外枠の形がおかしい' };
+
+  // マスごとに、左右の端の2か所の色を測る（中央の部屋番号をよける）
+  const med = (x0, x1, y0, y1) => {
+    const a = [[], [], []];
+    for (let y = Math.round(y0); y < Math.round(y1); y++) for (let x = Math.round(x0); x < Math.round(x1); x++) {
+      const i = y * W + x; a[0].push(R[i]); a[1].push(G[i]); a[2].push(B[i]);
+    }
+    return a.map(v => { v.sort((p, q) => p - q); return v.length ? v[v.length >> 1] : 255; });
+  };
+  const map = {}, odd = {}, black = [];
+  for (let ri = 0; ri < 11; ri++) for (let ci = 0; ci < 17; ci++) {
+    const room = String((12 - ri) * 100 + ci + 1);
+    const xa = left + ci * cw, ya = top + ri * rh;
+    const p1 = med(xa + cw * 0.07, xa + cw * 0.27, ya + rh * 0.2, ya + rh * 0.8);
+    const p2 = med(xa + cw * 0.73, xa + cw * 0.93, ya + rh * 0.2, ya + rh * 0.8);
+    const k1 = dblKindOf(...p1), k2 = dblKindOf(...p2);
+    if (k1 === 'BLACK' && k2 === 'BLACK') { black.push(room); continue; }
+    if (DBL_BLACK.indexOf(room) >= 0) continue;
+    map[room] = k1 === k2 ? k1 : '?';
+    if (map[room] === '?') odd[room] = p1.join(',') + '/' + p2.join(',');
+  }
+  const box = [left, top, right, bot].map(Math.round);
+  const miss = DBL_BLACK.filter(r => black.indexOf(r) < 0), extra = black.filter(r => DBL_BLACK.indexOf(r) < 0);
+  if (miss.length || extra.length)
+    return { ok: false, why: '黒マスの位置が合わない（' + (miss.length ? '黒くない:' + miss.join('・') : '')
+      + (extra.length ? ' 黒い:' + extra.join('・') : '') + '）', box };
+  const unk = Object.keys(map).filter(r => map[r] === '?');
+  if (unk.length > 10) return { ok: false, why: '色が決まらないマスが多い（' + unk.length + '室）', box, odd };
+  return { ok: true, map, odd, box };
+}
+/* DBL_COLOR_END */
+
+/** ダブルメイク指示書のファイル（PDF・写真）を画像にして色を測る。だめなら { ok:false, why } */
+async function dblColorFromFile(file){
+  try {
+    const LONG = 1600;                                  // 長い辺。マス1つが横 90px 前後になる
+    const cv = document.createElement('canvas');
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      const lib = await loadPdfJs();
+      const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+      const page = await pdf.getPage(1);
+      const v1 = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: LONG / Math.max(v1.width, v1.height) });
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const g = cv.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: g, viewport: vp }).promise;
+    } else {
+      const img = await new Promise((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im); im.onerror = () => rej(new Error('img'));
+        im.src = URL.createObjectURL(file);
+      });
+      const s = Math.min(1, LONG / Math.max(img.width, img.height));
+      cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    }
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    return dblGridColors(d.data, cv.width, cv.height);
+  } catch(e){
+    return { ok: false, why: '画像にできなかった' };
+  }
+}
 
 /** ファイルをそのまま base64 にする（PDF用） */
 function readB64(file){
@@ -722,8 +917,10 @@ function finish(ind, ord, dbl){
   say('突き合わせ中…');
   const keep = $('bars').innerHTML;   // ダブルメイクが読めなかった知らせは残す
   FINISH_NOTE = keep;
+  // ダブルメイク指示書を選んだときは、マスの色の測定も送る（測れなかったときも理由を送り、画面に出す）
+  const color = IMG.f3 ? (DBL_COLOR || { ok: false, why: '色を測っていない' }) : null;
   adminRun().withSuccessHandler(show).withFailureHandler(fail)
-    .mergeAll(ind, ord, dbl);
+    .mergeAll(ind, ord, dbl, color);
 }
 
 function say(t){ $('ocrMsg').innerHTML = '<span class="spin"></span>'+esc(t); }
@@ -775,7 +972,11 @@ function show(res){
   if (d){
     const byKind = {};
     d.rooms.forEach(x => { (byKind[x.kind] = byKind[x.kind] || []).push(x.room); });
+    const c = d.color || {};
     $('ord').innerHTML += '<div style="margin-top:10px"><b style="min-width:0">ダブルメイク指示書</b></div>'
+      + '<div style="color:' + (c.ok ? '#2E6A25' : '#A63D2A') + '">' + esc(c.ok
+          ? 'マスの色で決めました' + (c.aiRead ? '（AI の読みと違う・AI が返さなかった部屋 ' + (c.ask || []).length + '室）' : '（AI は読めなかった）')
+          : 'マスの色で確かめられなかったので AI の読みだけです') + '</div>'
       + Object.keys(byKind).map(k =>
           '<div><b>'+esc(dmakeLabel(k))+'</b>'+byKind[k].length+'室：'+esc(byKind[k].join('、'))+'</div>').join('')
       + line('ツイン', d.twins.map(p=>p.join('・')))
@@ -851,7 +1052,13 @@ function drawRows(){
     +   EXTRA.map(([k,n])=>'<button class="chip'+(r[k]?' on':'')+'" '
     +     'onclick="flipEx('+i+',\''+k+'\')">'+n+'</button>').join('')
     + '</div>'
-    + (r.dmake ? '<div class="flagline" style="color:'+(r.dmake === '解除' ? '#A63D2A' : '#8A5300')+'"><b>Wメイク</b>　'+esc(dmakeLabel(r.dmake))+'</div>' : '')
+    + (r.dmakeAsk
+        // マスの色と AI の読みが違った部屋は、紙を見て選び直せるようにする（最初は色のほう）
+        ? '<div class="flagline"><b>Wメイク</b>　<select onchange="setDmake('+i+',this.value)">'
+          + DMAKE_PICK.map(k=>'<option value="'+esc(k)+'"'+((r.dmake||'')===k?' selected':'')+'>'
+            + (k ? esc(dmakeLabel(k)) : 'なし（白）') + (k === (r.dmakeAi||'') ? '　← AI の読み' : '') + '</option>').join('')
+          + '</select></div>'
+        : (r.dmake ? '<div class="flagline" style="color:'+(r.dmake === '解除' ? '#A63D2A' : '#8A5300')+'"><b>Wメイク</b>　'+esc(dmakeLabel(r.dmake))+'</div>' : ''))
     + (r.note ? '<div class="flagline" style="color:var(--muted)">'+esc(r.note)+'</div>' : '')
     + (needCheck(r)
         ? '<button class="chip" style="margin-top:8px;border-color:#2E7D4F;color:#2E7D4F" '
@@ -880,6 +1087,9 @@ function confirmRow(i){
 }
 
 function upd(i,k,v){ ROWS[i][k]=v; }
+/** 読み取りの一覧で選べるWメイクの区分（ピンクは解除に入る） */
+const DMAKE_PICK = ['', '新規', '継続', '解除', '常設', 'ベッド下収納'];
+function setDmake(i,v){ ROWS[i].dmake = v; }
 function setCode(i,v){
   ROWS[i].code = v;
   ROWS[i].kbn = kbnOf(v, ROWS[i].fullClean, ROWS[i]);
