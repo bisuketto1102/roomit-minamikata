@@ -9,7 +9,7 @@
  *************************************************/
 
 const SHEET = { LOG: '打刻ログ', STAFF: 'スタッフ', ARCHIVE: '打刻ログ_保管',
-                DAY: '日次メモ', DLOG: '日報ログ' };
+                DAY: '日次メモ', DLOG: '日報ログ', HIST: '清掃履歴' };
 
 /** 打刻ログを何か月ぶん手元に置くか。過ぎたぶんは保管シートへ移す（消さない） */
 const KEEP_MONTHS = 2;
@@ -45,6 +45,7 @@ const DAY_HEAD = [
  *  31-33 特別清掃 / 34 要確認メモ / 36 備品 / 37 バッグ回収 / 38 冷蔵庫(チェック)
  *  39 Dメイク / 40 ツイン / 41 コネクト / 42 エコ清掃
  *  43-45 回収の記録 / 46 追加指示
+ *  47 EC清掃（ステイ・フルで現場が押す。押すとDDが外れて清掃に入る）/ 48 チェッカー報告（日報の備考に載る）
  */
 const LOG_HEAD = [
   '日付','部屋番号','階','コード','区分','予約',
@@ -59,7 +60,9 @@ const LOG_HEAD = [
   '(未使用)','備品','バッグ回収','冷蔵庫(チェック)',
   'Dメイク','ツイン','コネクト','エコ清掃',
   'ゴミ回収記録','バッグ回収記録','回収確認',
-  '追加指示'
+  '追加指示',
+  'EC清掃','チェッカー報告',
+  '追加指示の確認'
 ];
 const NCOL = LOG_HEAD.length;
 
@@ -74,15 +77,19 @@ const IMPORT_COLS = [3,4,5,6,7,8,9,20,21,22,23,24,29,34,39,40,41,42];
 const FLAG_COL = {
   dd: 18, skip: 19, water: 25, fridge: 26, pickup: 27, memo: 28,
   spAircon: 31, spDrain: 32, spTv: 33,
-  supply: 36, bag: 37, fridgeCheck: 38
+  supply: 36, bag: 37, fridgeCheck: 38,
+  ec: 47,                                  // EC清掃：DDの部屋がエコ清掃に変わったとき現場で押す
+  report: 48                               // チェッカー報告（香水臭・故障など。日報の備考に載る）
 };
 
 /** 回収を押した人と時刻を残す列。「上井 10:32」の形 */
 const COLLECT_COL = { pickup: 43, bag: 44, check: 45 };
-const BOOL_FLAGS = ['dd','skip','pickup','spAircon','spDrain','spTv','bag'];
+const BOOL_FLAGS = ['dd','skip','pickup','spAircon','spDrain','spTv','bag','ec'];
 
 /** 業務中の追加指示（フロントなどから途中で来た指示）。取り込みでは触らない */
 const ORDER_COL = 46;
+/** 追加指示を清掃員が確かめた印（「名前 HH:mm」）。指示を足す・書き換えると消える（清掃員画面の「！」がまた点滅する） */
+const ORDER_ACK_COL = 49;
 
 /**
  * 特別清掃。月内に全室を1周するローテーション。
@@ -159,7 +166,7 @@ function ensureCols_(ss) {
       log.getRange(1, 1, 1, NCOL).setValues([LOG_HEAD]).setFontWeight('bold');
       // 足した列（追加指示）と回収記録・メモは文字のまま残す
       const rows = Math.max(log.getMaxRows() - 1, 1);
-      [28, 43, 44, 45, ORDER_COL].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));
+      [28, 43, 44, 45, ORDER_COL, FLAG_COL.report, ORDER_ACK_COL].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));
     }
   }
   c.put(key, '1', 21600);
@@ -371,7 +378,7 @@ function initSpreadsheet() {
   const rows = Math.max(log.getMaxRows() - 1, 1);
   [11, 12, 15, 16].forEach(c => log.getRange(2, c, rows).setNumberFormat('HH:mm'));
   // 部屋番号・時刻・メモ・回収記録・追加指示は文字列固定
-  [2, 7, 8, 9, 28, 43, 44, 45, ORDER_COL].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));
+  [2, 7, 8, 9, 28, 43, 44, 45, ORDER_COL, FLAG_COL.report, ORDER_ACK_COL].forEach(c => log.getRange(2, c, rows).setNumberFormat('@'));
 
   let day = ss.getSheetByName(SHEET.DAY);
   if (!day) day = ss.insertSheet(SHEET.DAY);
@@ -480,6 +487,14 @@ function saveImport_(date, rooms) {
     const have = {};
     all.forEach((r, i) => { if (normDate_(r[0]) === d) have[String(r[1]).trim()] = i; });
 
+    /*
+     * ステイは基本DD（御堂筋と同じ。清掃に入らずドア前に備品を置く）。清掃に入るのはフルと、
+     * 現場で EC清掃 を押した部屋だけ。なので取り込み時にステイには DD を立てる（清掃不要は立てない）。
+     * 取り込み直しのときは、もともとステイだった部屋には触らない（現場の EC・DD を消さないため）。
+     * ほかの区分からステイに変わった部屋だけ、まだ清掃に入っておらず EC も無ければ DD を立てる。
+     * ステイからアウト・空室などに変わった部屋は、清掃に入っておらず清掃不要でもなければ DD を外す。
+     */
+    const iDD = FLAG_COL.dd - 1, iSkip = FLAG_COL.skip - 1, iEC = FLAG_COL.ec - 1;
     let lo = Infinity, hi = -1;
     const add = [];
     rooms.forEach(r => {
@@ -488,8 +503,13 @@ function saveImport_(date, rooms) {
       if (i != null) {
         const v = all[i];
         const prevCode = String(v[3] || '').toUpperCase();
+        const prevKbn = String(v[4] || '');
         const started = !!v[TASK_COL.clean];
         IMPORT_COLS.forEach((c, k) => { v[c - 1] = vals[k]; });
+        if (!started && !bool_(v[iSkip])) {
+          if (r.kbn === 'STAY' && prevKbn !== 'STAY' && !bool_(v[iEC])) v[iDD] = true;
+          if (prevKbn === 'STAY' && ['OUT', 'V', 'NONE'].indexOf(r.kbn) >= 0) { v[iDD] = ''; v[iEC] = ''; }
+        }
         // 現場でアウト済にした・清掃に入った部屋は、取り込み直しても D（アウト前）に戻さない
         if (r.kbn === 'OUT' && String(v[3]).toUpperCase() === 'D' && (prevCode === 'O' || started)) v[3] = 'O';
         v[29] = stamp;
@@ -498,6 +518,7 @@ function saveImport_(date, rooms) {
         const line = new Array(NCOL).fill('');
         line[0] = d; line[1] = String(r.room);
         IMPORT_COLS.forEach((c, k) => { line[c - 1] = vals[k]; });
+        if (r.kbn === 'STAY') line[iDD] = true;
         line[29] = stamp;
         add.push(line);
       }
@@ -507,7 +528,7 @@ function saveImport_(date, rooms) {
     const textCols = (r0, n) => {
       const r1 = r0 + n - 1;
       sh.getRangeList(['B' + r0 + ':B' + r1, 'G' + r0 + ':I' + r1, 'AB' + r0 + ':AB' + r1,
-                       'AQ' + r0 + ':AT' + r1]).setNumberFormat('@');
+                       'AQ' + r0 + ':AT' + r1, 'AV' + r0 + ':AW' + r1]).setNumberFormat('@');
     };
     if (hi >= 0) {
       textCols(lo + 2, hi - lo + 1);
@@ -658,10 +679,14 @@ function rowToRoom_(r) {
     flagNote: String(r[33] || '').trim(),
     supply: String(r[35] || ''), bag: bool_(r[36]),
     fridgeCheck: String(r[37] || ''),
-    dmake: String(r[38] || ''), twin: bool_(r[39]), connect: String(r[40] || ''),
+    dmake: String(r[38] || ''), twin: bool_(r[39]) || TWIN_FIXED.indexOf(String(r[1]).trim()) >= 0,   // 1209・1211 は常にツイン
+    connect: String(r[40] || ''),
     eco: bool_(r[41]),
     pickupBy: String(r[42] || ''), bagBy: String(r[43] || ''), collectOk: String(r[44] || ''),
-    order: String(r[ORDER_COL - 1] || '').trim()
+    order: String(r[ORDER_COL - 1] || '').trim(),
+    ec: bool_(r[FLAG_COL.ec - 1]),
+    report: String(r[FLAG_COL.report - 1] || '').trim(),
+    orderAck: String(r[ORDER_ACK_COL - 1] || '').trim()
   };
 }
 
@@ -786,15 +811,21 @@ function getBoard(dateStr) {
   const todayNo = Number(date.slice(8, 10));
   list.forEach(r => { r.spTodo = spTodo_(r.room, names, map, todayNo); });
 
+  // 同じ日に2回目以降の清掃をしている部屋は、何回目かを付ける
+  const times = {};
+  histOf_(date).forEach(h => { times[h.room] = (times[h.room] || 0) + 1; });
+  list.forEach(r => { r.round = (times[r.room] || 0) + 1; });
+
   return {
     date: date, rooms: list, staffList: getStaffList(),
-    rev: rev0, counts: countOf_(list),
+    rev: rev0, counts: countOf_(list), team: getFloorTeam_(date),
     now: new Date().getTime()   // 端末の時計のずれを直すため
   };
 }
 
 function countOf_(list) {
-  const target = list.filter(r => !r.skip && ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
+  // 清掃する部屋だけ数える。DD（清掃不要を含む。ステイは基本DD）は外す。EC清掃の部屋は DD が外れているので入る
+  const target = list.filter(r => !r.skip && !r.dd && ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
   return {
     total:   target.length,
     done:    target.filter(r => r.clean.state === 'done').length,
@@ -1124,6 +1155,8 @@ function putFlag_(v, k, val) {
  */
 function applyPatch_(v, patch0, time, replay) {
   const patch = Object.assign({}, patch0);
+  const iDD = FLAG_COL.dd - 1, iEC = FLAG_COL.ec - 1;
+  const was = { dd: bool_(v[iDD]), ec: bool_(v[iEC]) };
   const by = String(patch.__by || '').trim();
   ['pickup', 'bag'].forEach(k => {
     if (!(k in patch)) return;
@@ -1139,7 +1172,27 @@ function applyPatch_(v, patch0, time, replay) {
   });
   Object.keys(FLAG_COL).forEach(k => { if (k in patch) putFlag_(v, k, patch[k]); });
   // 清掃不要の部屋はDDを外せない（清掃不要もDDとして数えるため。DD解除を押しても清掃不要の間はDDのまま）
-  if (bool_(v[FLAG_COL.skip - 1])) putFlag_(v, 'dd', true);
+  if (bool_(v[FLAG_COL.skip - 1]) && !(patch.full === true)) { putFlag_(v, 'dd', true); v[iEC] = ''; }
+  // DD と EC清掃は両立させない（御堂筋と同じ）。EC の部屋に DD を立てた → DD を残す。それ以外 → EC を残す
+  else if (bool_(v[iDD]) && bool_(v[iEC])) {
+    if (!was.dd && was.ec) v[iEC] = ''; else v[iDD] = '';
+  }
+  /*
+   * 清掃員画面からフルメイクに切り替える（エコ清掃からフルメイクに変わることがあるため）。ステイ（S・SD）の部屋だけ。
+   *  フルにする → 区分 FULL（リネン強制交換）。DD・EC清掃・清掃不要は外して清掃に入る
+   *  フルを外す → 区分 STAY に戻し、EC清掃でなければ DD に戻す（ステイは基本DD）
+   *  19時以降のレイトアウト（翌日回し）の部屋は区分を変えない。
+   *  フル清掃の列は取り込みの列なので、朝の紙を取り込み直すと紙の値に戻る。
+   */
+  if ('full' in patch) {
+    const code = String(v[3] || '').toUpperCase();
+    if (['S', 'SD'].indexOf(code) >= 0) {
+      v[20] = patch.full ? true : '';
+      if (!(String(v[8] || '') >= '19:00')) v[4] = kbnOf_(code, !!patch.full);
+      if (patch.full) { v[iDD] = ''; v[iEC] = ''; v[FLAG_COL.skip - 1] = ''; }
+      else if (!bool_(v[iEC])) v[iDD] = true;
+    }
+  }
 }
 
 /**
@@ -1155,7 +1208,9 @@ function setRoomFlag1(room, patch, at) {
     // 特別清掃を押したら、月の残りを読み直す
     if (SPECIAL.some(s => s[0] in patch)) spDoneClear_(date.slice(0, 7));
     applyPatch_(x.v, patch, w.time, w.replay);
-    return writeRoomRow_(sh, date, x);
+    const out = writeRoomRow_(sh, date, x);
+    spSheetSync_(date, [String(room)], patch);
+    return out;
   });
 }
 
@@ -1193,10 +1248,137 @@ function setRoomFlags(rooms, patch, at) {
       applyPatch_(x.v, patch, w.time, w.replay);
       sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
     });
+    spSheetSync_(date, (Array.isArray(rooms) ? rooms : [rooms]).map(String), patch);
     bumpRev_(date);
     return getBoard(date);
   });
 }
+
+
+/*************************************************
+ * 同じ日に2回目の清掃（別のお客様が使った部屋）。御堂筋と同じ仕組み
+ *  1回目の記録（清掃・チェックの担当と時刻を含む行まるごと）を「清掃履歴」シートに残し、
+ *  打刻ログの清掃・チェックを空にして、もう一度押せるようにする。
+ *  日報・責任者業務日報・フロアレポート・集計・清掃員別は、残した記録も数える（2回清掃なら2室）。
+ *  電波が切れているときは送り直しに貯めない（押した人がその場で結果を見られるように）。
+ *************************************************/
+function histSheet_() {
+  const ss = ss_();
+  let h = ss.getSheetByName(SHEET.HIST);
+  if (!h) {
+    h = ss.insertSheet(SHEET.HIST);
+    if (h.getMaxColumns() < NCOL + 1) h.insertColumnsAfter(h.getMaxColumns(), NCOL + 1 - h.getMaxColumns());
+    h.getRange(1, 1, 1, NCOL + 1).setValues([LOG_HEAD.concat(['記録時刻'])]).setFontWeight('bold');
+    h.setFrozenRows(1);
+  }
+  if (h.getMaxColumns() < NCOL + 1) h.insertColumnsAfter(h.getMaxColumns(), NCOL + 1 - h.getMaxColumns());
+  return h;
+}
+
+/** その日の、残した記録（1回目など）を部屋の形で返す。帳票では清掃不要をDDとして読む */
+function histOf_(date) {
+  const h = ss_().getSheetByName(SHEET.HIST);
+  if (!h) return [];
+  return dayBlock_(h, date, NCOL).filter(r => String(r[1]).trim()).map(reportRoom_);
+}
+
+function startSecondClean(room, staff) {
+  needStaff_(staff);
+  return withLock_(() => {
+    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const x = readRoomRow_(sh, date, String(room));
+    if (!x) throw new Error(room + ' は本日の指示に入っていません');
+    const v = x.v;
+    if (!v[TASK_COL.check + 1]) throw new Error(room + ' はまだチェックが終わっていません。チェックのあとで押してください');
+    if (bool_(v[FLAG_COL.dd - 1])) throw new Error(room + ' はDDの部屋です');
+
+    const h = histSheet_();
+    const at = appendAt_(h, 1);
+    h.getRange(at, 2, 1, 1).setNumberFormat('@');
+    h.getRange(at, 7, 1, 3).setNumberFormat('@');                 // 締切・IN時刻・レイトアウトは文字のまま残す
+    h.getRange(at, 1, 1, NCOL + 1).setValues([v.concat([new Date()])]);
+
+    for (let i = TASK_COL.clean - 1; i <= TASK_COL.check + 2; i++) v[i] = '';   // 清掃・チェックの担当と時刻を空に
+    v[FLAG_COL.water - 1] = '';                                                    // 水は回ごとに入れる（前の回の本数は清掃履歴に残る）
+    if (String(v[4]) === 'OUT') v[3] = 'D';                                       // 次のお客様が出るまでアウト前
+    const out = writeRoomRow_(sh, date, x);
+    out.round = histOf_(date).filter(r => r.room === out.room).length + 1;
+    return out;
+  });
+}
+
+/**
+ * 「もう一度清掃」を間違えて押したときに戻す。
+ * 今の回でまだ入室していなければ、清掃履歴のいちばん新しい記録（前の回）の清掃・チェック・水・コードを打刻ログへ戻し、
+ * その記録を清掃履歴から消す。ほかの列（メモ・追加指示など）は今のまま。
+ */
+function undoSecondClean(room, staff) {
+  needStaff_(staff);
+  return withLock_(() => {
+    const date = today_(), sh = ss_().getSheetByName(SHEET.LOG);
+    const x = readRoomRow_(sh, date, String(room));
+    if (!x) throw new Error(room + ' は本日の指示に入っていません');
+    const v = x.v;
+    if (v[TASK_COL.clean] || v[TASK_COL.check]) throw new Error(room + ' はもう入室が押されています。先に「入室前に戻す」をしてください');
+
+    const h = ss_().getSheetByName(SHEET.HIST);
+    if (!h || h.getLastRow() < 2) throw new Error(room + ' に前の回の記録がありません');
+    const keys = h.getRange(2, 1, h.getLastRow() - 1, 2).getValues();
+    let at = 0;
+    for (let i = keys.length - 1; i >= 0; i--) {
+      if (normDate_(keys[i][0]) === date && String(keys[i][1]).trim() === String(v[1]).trim()) { at = i + 2; break; }
+    }
+    if (!at) throw new Error(room + ' に前の回の記録がありません');
+
+    const prev = h.getRange(at, 1, 1, NCOL).getValues()[0];
+    for (let i = TASK_COL.clean - 1; i <= TASK_COL.check + 2; i++) v[i] = prev[i];   // 清掃・チェックの担当と時刻
+    v[3] = prev[3];                                                                // コード（アウト済など）
+    if (v[FLAG_COL.water - 1] === '' || v[FLAG_COL.water - 1] == null) v[FLAG_COL.water - 1] = prev[FLAG_COL.water - 1];
+    const out = writeRoomRow_(sh, date, x);
+    h.deleteRows(at, 1);
+    out.round = histOf_(date).filter(r => r.room === out.room).length + 1;
+    return out;
+  });
+}
+
+
+/*************************************************
+ * 担当階（清掃員が自分で選ぶ。その日だけ）。御堂筋と同じ仕組み
+ *  { '2F': ['カビタ'], '3F': ['ヒラ','パル'] } の形で、スクリプトプロパティ FLOOR_日付 に持つ。
+ *  担当は目印だけで、ほかの人がその階の部屋に入るのは自由。1つの階に2人まで。
+ *************************************************/
+const TEAM_MAX = 2;
+
+function getFloorTeam_(date) {
+  try { return JSON.parse(props_().getProperty('FLOOR_' + date) || '{}'); } catch (e) { return {}; }
+}
+
+/** 自分をその階の担当にする（on=true）／外す（on=false）。今日の分だけ */
+function setFloorTeam(floor, name, on) {
+  needStaff_(name);
+  return withLock_(() => {
+    const date = today_(), f = String(floor || ''), nm = String(name || '').trim();
+    if (!/^\d{1,2}F$/.test(f) || parseInt(f, 10) < 2 || parseInt(f, 10) > 12) throw new Error('階がわかりません');
+    if (nm.length > 40 || /[<>]/.test(nm)) throw new Error('名前が正しくありません');
+    const team = getFloorTeam_(date);
+    const list = (team[f] || []).filter(x => !samePerson_(x, nm));
+    if (on) {
+      if (list.length >= TEAM_MAX) throw new Error(f + ' はもう ' + TEAM_MAX + ' 人が担当しています（' + list.join('・') + '）');
+      list.push(nm);
+    }
+    if (list.length) team[f] = list; else delete team[f];
+    props_().setProperty('FLOOR_' + date, JSON.stringify(team));
+    return { team: team, __rev: bumpRev_(date) };
+  });
+}
+
+/** 7日より前の担当階を消す（毎朝の整理から呼ぶ） */
+function cleanupFloorTeams_() {
+  const limit = Utilities.formatDate(new Date(Date.now() - 7 * 86400000), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const p = props_();
+  p.getKeys().filter(k => /^FLOOR_\d{4}-\d{2}-\d{2}$/.test(k) && k.slice(6) < limit).forEach(k => p.deleteProperty(k));
+}
+
 
 
 /*************************************************
@@ -1211,10 +1393,36 @@ function roomNo_(v) {
 }
 
 /** rooms は「305 306」「305,306」のような文字でも配列でもよい。すでに指示がある部屋は後ろに足す */
-function addOrder_(rooms, text, dateStr) {
+/**
+ * 追加指示の文から早インの時刻を読む（「12時イン」「アーリーイン 12時」「早イン12:30」「IN 13時」など）。無ければ空。
+ * 「14時アウト」のようなアウトの時刻は拾わない。
+ */
+function earlyInOf_(text) {
+  const s = String(text || '').normalize('NFKC');
+  let m = s.match(/(\d{1,2})(?:[:：時](\d{2})?分?)?\s*(?:から)?\s*(?:の)?\s*(?:アーリー|早)?\s*(?:イン|IN|in)(?![a-z])/i);
+  if (!m) m = s.match(/(?:アーリー|早)\s*(?:イン|IN)\s*(\d{1,2})(?:[:：時](\d{2})?)?/i);
+  if (!m) m = s.match(/(?:イン|IN)\s*(\d{1,2})(?:[:：時](\d{2})?)?/i);   // 「IN 13時」「チェックイン14時」
+  if (!m) return '';
+  const h = Number(m[1]), mi = Number(m[2] || 0);
+  if (h < 6 || h > 23 || mi > 59) return '';
+  return ('0' + h).slice(-2) + ':' + ('0' + mi).slice(-2);
+}
+
+/**
+ * rooms は「305 306」「305,306」のような文字でも配列でもよい。すでに指示がある部屋は後ろに足す。
+ * inTime（早インの時刻）を渡すか、指示の文に「12時イン」などがあれば、IN時刻と締切（30分前）も入れて
+ * 清掃員画面の「早仕上げ」に載せる。指示を足したら「確認した」印は消す（「！」がまた点滅する）。
+ */
+function addOrder_(rooms, text, dateStr, inTime) {
   return withLock_(() => {
-    const t = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!t) throw new Error('指示の内容を入れてください');
+    let t = String(text || '').replace(/\s+/g, ' ').trim();
+    const tin = hhmm_(inTime) || earlyInOf_(t);
+    // 早インの時刻を欄で入れたら、指示の文にも時刻を載せる（文に書かなくても清掃員画面の指示に出るように）
+    if (hhmm_(inTime)) {
+      if (!t) t = '早イン ' + tin;
+      else if (earlyInOf_(t) !== tin) t += '（' + tin + 'イン）';
+    }
+    if (!t) throw new Error('指示の内容か、早インの時刻を入れてください');
     const list = (Array.isArray(rooms) ? rooms : String(rooms || '').split(/[\s,、，・]+/))
       .map(roomNo_).filter(Boolean);
     if (!list.length) throw new Error('部屋番号を入れてください');
@@ -1226,11 +1434,14 @@ function addOrder_(rooms, text, dateStr) {
       if (!x) { missing.push(room); return; }
       const prev = String(x.v[ORDER_COL - 1] || '').trim();
       x.v[ORDER_COL - 1] = ((prev ? prev + ' / ' : '') + t).slice(0, 300);
+      x.v[ORDER_ACK_COL - 1] = '';
+      if (tin) { x.v[7] = tin; x.v[6] = minusMin_(tin, EARLY_MARGIN_MIN); }
+      sh.getRange(x.row, 7, 1, 2).setNumberFormat('@');
       sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
       added.push(room);
     });
     if (added.length) bumpRev_(date);
-    return { added: added, missing: missing, orders: getOrders_(date).orders };
+    return { added: added, missing: missing, inTime: tin, orders: getOrders_(date).orders };
   });
 }
 
@@ -1241,9 +1452,27 @@ function setOrder_(room, text, dateStr) {
     const x = readRoomRow_(sh, date, roomNo_(room));
     if (!x) throw new Error(room + ' はその日の指示に入っていません');
     x.v[ORDER_COL - 1] = String(text || '').trim().slice(0, 300);
+    x.v[ORDER_ACK_COL - 1] = '';
     sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
     bumpRev_(date);
     return getOrders_(date);
+  });
+}
+
+/**
+ * 清掃員が追加指示を確かめた（清掃員画面の部屋の詳細の「内容を確認しました」）。確かめた人と時刻を残し、「！」の点滅を止める。
+ * 指示が消えていれば何もしない。もう誰かが確かめていれば、最初の人のまま。
+ */
+function ackOrder(room, staff, at) {
+  needStaff_(staff);
+  return withLock_(() => {
+    const w = when_(at), date = w.date, sh = ss_().getSheetByName(SHEET.LOG);
+    const x = readRoomRow_(sh, date, String(room));
+    if (!x) throw new Error(room + ' は本日の指示に入っていません');
+    if (!String(x.v[ORDER_COL - 1] || '').trim()) return rowToRoomRev_(date, x.v);   // 指示が消えていれば何もしない
+    if (String(x.v[ORDER_ACK_COL - 1] || '').trim()) return rowToRoomRev_(date, x.v); // もう誰かが確かめた
+    x.v[ORDER_ACK_COL - 1] = (String(staff).trim() + ' ' + hm_(w.time)).trim();
+    return writeRoomRow_(sh, date, x);
   });
 }
 
@@ -1297,7 +1526,11 @@ function setRoomAdmin_(room, d, dateStr) {
       v[3] = c;
     }
     if ('dueIn' in d)   v[6] = hhmm_(d.dueIn);
-    if ('checkIn' in d) v[7] = hhmm_(d.checkIn);
+    if ('checkIn' in d) {
+      v[7] = hhmm_(d.checkIn);
+      // IN時刻だけ入れたときは、締切（仕上げ）を30分前にする（清掃員画面の早仕上げ・締切に出るように）
+      if (!('dueIn' in d)) v[6] = v[7] ? minusMin_(v[7], EARLY_MARGIN_MIN) : '';
+    }
     if ('lateOut' in d) v[8] = hhmm_(d.lateOut);
     const isNext = String(v[8] || '') >= '19:00';
 
@@ -1310,11 +1543,16 @@ function setRoomAdmin_(room, d, dateStr) {
     if ('twin' in d)  v[39] = d.twin ? true : '';
     if ('eco' in d)   v[41] = d.eco ? true : '';
     if ('note' in d)  v[28] = String(d.note || '').trim().slice(0, 300);
-    if ('order' in d) v[ORDER_COL - 1] = String(d.order || '').trim().slice(0, 300);
+    if ('order' in d) {
+      const nv = String(d.order || '').trim().slice(0, 300);
+      if (nv !== String(v[ORDER_COL - 1] || '').trim()) v[ORDER_ACK_COL - 1] = '';   // 書き換えたら「！」をまた点滅
+      v[ORDER_COL - 1] = nv;
+    }
 
     const patch = {};
-    ['dd', 'skip', 'supply', 'memo'].forEach(k => { if (k in d) patch[k] = d[k]; });
-    if (patch.skip === true) patch.dd = true;      // 清掃不要は DD も立てる（清掃員画面と同じ）
+    ['dd', 'skip', 'supply', 'memo', 'ec', 'report'].forEach(k => { if (k in d) patch[k] = d[k]; });
+    if (patch.skip === true) { patch.dd = true; patch.ec = false; }   // 清掃不要は DD も立てる（清掃員画面と同じ）
+    if (patch.ec === true && !('dd' in patch)) patch.dd = false;      // EC清掃にしたら DD を外す
     applyPatch_(v, patch);
 
     return writeRoomRow_(sh, date, x);
@@ -1382,10 +1620,22 @@ function getReport_(dateStr) {
     const o = floors[f];
 
     if (r.dd) o.dd.push(r.room);
-    if (r.water) o.water += Number(r.water) || 0;
+    o.water += waterOf_(r);
 
     // 清掃不要はDDの部屋と同じ扱い（区分とトータルに入れる。日報の清掃指示数とそろえる）
     if (['OUT','STAY','FULL'].indexOf(r.kbn) < 0) return;
+    o[r.kbn]++; o.total++;
+    if (r.clean.state === 'done') o.done++;
+    if (r.check.state === 'done') o.checked++;
+  });
+
+  // 同じ日の2回目以降の清掃：前の回の記録も、区分・清掃済・水に足す（DD の一覧には足さない）
+  histOf_(date).forEach(r => {
+    const f = r.floor || 'その他';
+    if (!floors[f]) floors[f] = blank();
+    const o = floors[f];
+    o.water += waterOf_(r);
+    if (r.dd || ['OUT','STAY','FULL'].indexOf(r.kbn) < 0) return;
     o[r.kbn]++; o.total++;
     if (r.clean.state === 'done') o.done++;
     if (r.check.state === 'done') o.checked++;
@@ -1423,7 +1673,9 @@ function getSummary_(dateStr) {
     o[key].rooms++; o[key].minutes += min;
   };
 
-  list.forEach(r => {
+  // 同じ日の2回目以降の清掃は、前の回の記録も数える
+  const all = list.concat(histOf_(date));
+  all.forEach(r => {
     // DDの部屋の作業はDDセット／DDチェックとして、清掃の平均に混ぜない
     const names = r.dd ? [['clean', 'DDセット'], ['check', 'DDチェック']]
                        : [['clean', '清掃'], ['check', 'チェック']];
@@ -1431,7 +1683,7 @@ function getSummary_(dateStr) {
       const t = r[k];
       if (t.state !== 'done') return;
       add(byStaff, (t.staff || '不明') + ' / ' + name, t.minutes || 0);
-      if (k === 'clean') add(byKbn, r.dd ? 'DD' : kbnName_(r.kbn), t.minutes || 0);
+      if (k === 'clean') add(byKbn, r.dd ? 'DD' : r.ec ? 'EC清掃' : kbnName_(r.kbn), t.minutes || 0);
     });
   });
 
@@ -1441,7 +1693,7 @@ function getSummary_(dateStr) {
     return v;
   }).sort((a, b) => a.key < b.key ? -1 : 1);
 
-  return { date: date, staff: shape(byStaff), kbn: shape(byKbn), people: people_(list) };
+  return { date: date, staff: shape(byStaff), kbn: shape(byKbn), people: people_(all) };
 }
 
 /*************************************************
@@ -1458,16 +1710,17 @@ function getStaffAverages_(from, to) {
   const ss = ss_();
   // 打刻ログは KEEP_MONTHS か月ぶんだけ。それより前を見るときは保管シートも読む
   const rows = [];
-  const read = sh => {
+  const read = (sh, hist) => {
     if (!sh || sh.getLastRow() < 2) return;
     // 日付の列だけ先に読み、期間の最初の日より前の行は読まない（保管シートは毎日増えるため）
     const last = sh.getLastRow(), d = sh.getRange(2, 1, last - 1, 1).getValues();
     let s = 0;
-    if (from) { s = d.findIndex(r => normDate_(r[0]) >= from); if (s < 0) return; }
-    sh.getRange(2 + s, 1, last - 1 - s, 21).getValues().forEach(r => rows.push(r));
+    if (from && !hist) { s = d.findIndex(r => normDate_(r[0]) >= from); if (s < 0) return; }
+    sh.getRange(2 + s, 1, last - 1 - s, 21).getValues().forEach((r, i) => { if (hist) r.__h = 'h' + i; rows.push(r); });
   };
   read(ss.getSheetByName(SHEET.LOG));
   if (!from || from < keepFrom_()) read(ss.getSheetByName(SHEET.ARCHIVE));
+  read(ss.getSheetByName(SHEET.HIST), true);   // 同じ日の2回目以降の清掃の、前の回の記録
 
   const blank = () => ({ n: 0, sum: 0, min: null, max: null, ex: 0 });
   const add = (o, min) => {
@@ -1490,8 +1743,9 @@ function getStaffAverages_(from, to) {
     const d = normDate_(r[0]), room = String(r[1] || '').trim();
     if (!room || (from && d < from) || (to && d > to)) return;
     // 保管へ移す途中で止まったときなど、同じ日・同じ部屋が2行あっても1回だけ数える
-    if (seen[d + '|' + room]) return;
-    seen[d + '|' + room] = 1;
+    const sk = (r.__h || '') + d + '|' + room;
+    if (seen[sk]) return;
+    seen[sk] = 1;
     const kbn = String(r[4] || '').trim(), dd = bool_(r[17]);
     // c は入室の列（rowToRoom_ と同じ並び：担当 c-1・入室 c・退出 c+1・分 c+2）
     [['clean', 10], ['check', 14]].forEach(([task, c]) => {
@@ -1603,7 +1857,8 @@ function setSpecialNames_(ym, names) {
   const month = ym || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM');
   const cur = getSpecialNames(month).names;
   const v = [0, 1, 2].map(i => {
-    const x = String((Array.isArray(names) ? names[i] : '') || '').trim().slice(0, 40);
+    // 1枠目・2枠目は決まった項目のほか、自由に入れた項目も受ける（管理画面の「その他（自由に入力）」）
+    const x = String((Array.isArray(names) ? names[i] : '') || '').replace(/__free__/g, '').trim().slice(0, 40);
     if (i === 2 && !x) return cur[2] || '';
     return x;
   });
@@ -1784,29 +2039,36 @@ function buildDailyReport_(dateStr) {
    */
   const cleaned = r => r.check.state === 'done';
 
+  /*
+   * 同じ日の2回目以降の清掃（別のお客様が使った部屋）は、前の回の記録も1室として数える（御堂筋と同じ）。
+   * 清掃指示数にも足すので「清掃指示数 − 未清掃(DD) ＝ 実質」のまま。回収・DDの数には足さない。
+   */
+  const hist = histOf_(date).filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0 && !r.dd);
+  const tAll = target.concat(hist);
+
   const undone = list.filter(r => r.dd).sort((a, b) => cmpRoom_(a.room, b.room));
   const need   = undone.filter(r => r.supply !== '不要').map(r => r.room);
   const noNeed = undone.filter(r => r.supply === '不要').map(r => r.room);
 
   const who = {};
-  list.forEach(r => {
+  list.concat(hist).forEach(r => {
     if (r.clean.staff) who[r.clean.staff] = 1;
     if (r.check.staff) who[r.check.staff] = 1;
   });
 
   let last = '';
-  list.forEach(r => {
+  list.concat(hist).forEach(r => {
     [r.clean.finish, r.check.finish].forEach(t => { if (t && t > last) last = t; });
   });
 
-  const dm    = list.filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0 && !r.dd && cleaned(r));
+  const dm    = tAll.filter(r => !r.dd && cleaned(r));
   const royal = dm.filter(x => ROYAL_SET.indexOf(x.dmake) >= 0);
   const twin  = dm.filter(x => x.twin);
   const nNew  = dm.filter(x => x.dmake === '新規').length;
   const nOff  = dm.filter(x => x.dmake === '解除').length;
 
   const byFloor = {};
-  target.forEach(r => {
+  tAll.forEach(r => {
     const f = r.floor || 'その他';
     if (!byFloor[f]) byFloor[f] = { order: 0, real: 0, dbl: 0, twin: 0 };
     byFloor[f].order++;
@@ -1821,16 +2083,17 @@ function buildDailyReport_(dateStr) {
   const note = getDayNote_(date);
 
   const n = {
-    order:  target.length,
+    order:  tAll.length,
     // DDの部屋は中に入らないので、DD確認が済んでも清掃したことにはしない（実際に清掃した部屋だけ数える）
-    eco:    list.filter(x => x.eco && !x.dd && cleaned(x)).length,
-    out:    target.filter(x => x.kbn === 'OUT'  && !x.dd && cleaned(x)).length,
-    full:   target.filter(x => x.kbn === 'FULL' && !x.dd && cleaned(x)).length,
-    linen:  list.filter(x => x.linen && !x.dd && cleaned(x)).length,
+    // アパエコ清掃数＝現場で EC清掃 を押して清掃した部屋（ステイ・フルからエコ清掃に変わった部屋）
+    eco:    tAll.filter(x => x.ec && !x.dd && cleaned(x)).length,
+    out:    tAll.filter(x => x.kbn === 'OUT'  && !x.dd && cleaned(x)).length,
+    full:   tAll.filter(x => x.kbn === 'FULL' && !x.ec && !x.dd && cleaned(x)).length,   // エコ清掃に変わったフルは強制交換に入れない
+    linen:  tAll.filter(x => x.linen && !x.dd && cleaned(x)).length,
     bag:    list.filter(x => x.bag).length,
     undone: undone.length,
-    real:   target.filter(x => !x.dd && cleaned(x)).length,
-    water:  list.reduce((a, x) => a + (Number(x.water) || 0), 0),
+    real:   tAll.filter(x => !x.dd && cleaned(x)).length,
+    water:  list.concat(hist).reduce((a, x) => a + waterOf_(x), 0),   // 入れていなければ自動（waterOf_）
     trash:  list.filter(x => x.pickup).length
   };
 
@@ -1994,12 +2257,11 @@ function buildDailyReport_(dateStr) {
   r += Math.max(rowsNeed, rowsNo) + 1;
 
   /* ── 備考 ───────────────────────── */
-  // 現場メモから作る行に、手で書き足した行を合わせる（同じ行は1つにする）
-  // 現場メモから作る行（自動）と、手で書き足した行。手の行には前回の自動の行を入れない
-  //（入れると、現場メモを消したり直したりしても古い行が日報に残り続ける）
-  const autoMemo = list.filter(x => x.memo)
+  // チェッカー報告から作る行（自動）と、手で書き足した行。清掃員の現場メモは日報に載せない（フロアレポートの備考だけ）
+  // 手の行には前回の自動の行を入れない（入れると、報告を消したり直したりしても古い行が日報に残り続ける）
+  const autoMemo = list.filter(x => x.report)
       .sort((a, b) => cmpRoom_(a.room, b.room))
-      .map(x => x.room + '　' + x.memo);
+      .map(x => x.room + '　' + x.report);
   const memos = uniq_(((manual && manual.memo) || []).concat(autoMemo));
   const memoRows = Math.max(memos.length + 1, 4);
   const memoTop = r;
@@ -2084,8 +2346,6 @@ function buildDailyReport_(dateStr) {
     inRoom:  list.filter(x => x.clean.state === 'doing' || x.check.state === 'doing')
                  .map(x => x.room + (x.clean.state === 'doing' ? '（清掃）' : '（チェック）'))
                  .sort(cmpRoom_),
-    collect: list.filter(x => (x.pickup || x.bag) && !x.collectOk)
-                 .map(x => x.room).sort(cmpRoom_),
     ddTodo:  list.filter(x => x.dd && x.supply !== '不要' && x.check.state !== 'done')
                  .map(x => x.room + (x.clean.state !== 'done' ? '（セット）' : '（チェック）'))
                  .sort(cmpRoom_)
@@ -2205,7 +2465,7 @@ function isNextDay_(r) {
  *************************************************/
 const FR_PREFIX   = 'フロアレポート ';
 const FR_TEMPLATE = '_フロアレポート雛形';
-const FR_VERSION  = 'fr-v1';
+const FR_VERSION  = 'fr-v2';   // 雛形を変えたら上げる（上の担当者を外し、STAY の列を ECO にした 11/03）
 const FR_SLOTS    = 17;      // 1フロアの部屋数の上限（紙と同じ）
 const FR_TOP      = 6;       // 最初の部屋の行
 const FR_COLS     = 27;      // A〜AA
@@ -2246,12 +2506,12 @@ function buildFloorTemplate_(ss) {
   rg('X2:AA2').merge().setFontSize(14).setFontWeight('normal');
   rg('S3:W3').merge().setFontSize(14).setFontWeight('normal');
   rg('C3:H3').merge().setFontSize(16).setHorizontalAlignment('left').setVerticalAlignment('bottom');
-  rg('K3').setValue('担当者：').setFontSize(16).setVerticalAlignment('bottom');
-  rg('L3:Q3').merge().setFontSize(13).setHorizontalAlignment('left').setVerticalAlignment('bottom');
+  // 上の「担当者」の欄は無し（御堂筋と同じ。各部屋の清掃・チェックの担当者は表に出る）
 
   const head = [
     ['A4:B5', 'ROOM', 12], ['C4:C5', 'リネン\n回収', 9], ['D4:D5', 'ゴミ\n回収', 9],
-    ['E4:E5', 'OUT', 12], ['F4:H4', 'STAY', 12], ['F5', 'STAY', 10], ['G5', 'FULL', 10], ['H5', 'DD', 10],
+    // ステイは基本DDなので、清掃するステイはエコ清掃（EC）だけ。STAY の列は ECO にする（御堂筋と同じ）
+    ['E4:E5', 'OUT', 12], ['F4:H4', 'ステイ／STAY', 11], ['F5', 'ECO', 10], ['G5', 'FULL', 10], ['H5', 'DD', 10],
     ['I4:I5', '冷蔵庫', 11], ['J4:J5', '水', 12], ['K4:M4', '清掃スタッフ', 12],
     ['K5', '入室時間', 10], ['L5', '退出時間', 10], ['M5', '担当者', 10],
     ['N4:S5', '忘れ物・お客様から言われたこと・シーツ類の交換をしたなど', 11],
@@ -2324,7 +2584,7 @@ function buildFloorTemplate_(ss) {
   sh.getRange(F + 5, 1, 2, 26).setBorder(true, true, true, true, null, true, '#000000', MED);
 
   sh.getRange(F + 7, 18, 1, 9).merge().setValue('本日の清掃合計件数').setFontSize(13);
-  [['S', 'T', 'アウト'], ['U', 'V', 'ステイ\n（清掃札あり）'], ['W', 'X', 'フルメイク'],
+  [['S', 'T', 'アウト'], ['U', 'V', 'ECO\n（エコ清掃）'], ['W', 'X', 'フルメイク'],
    ['Y', 'Z', 'トータル室数']].forEach(([a, b, v]) => {
     rg(a + (F + 8) + ':' + b + (F + 8)).merge().setValue(v).setWrap(true).setFontSize(11);
     rg(a + (F + 9) + ':' + b + (F + 9)).merge().setHorizontalAlignment('right').setFontSize(16);
@@ -2344,6 +2604,32 @@ const FR_DD_CELLS = [
   [4, 5], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20], [23, 24], [25, 26],
   [4, 5], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20], [23, 24]
 ];
+
+/**
+ * フロアレポートの O・E・F・DD の印（御堂筋と同じ考え方。DD の部屋は DD だけ）。
+ *  E（ECO）＝エコ清掃（EC）の部屋。ステイは基本DDなので、DDでないステイも清掃するステイとして E に付ける
+ */
+function frMark_(r) {
+  const dd = !!r.dd;
+  return {
+    out:  r.kbn === 'OUT' && !dd,
+    eco:  !dd && (!!r.ec || r.kbn === 'STAY'),
+    full: r.kbn === 'FULL' && !r.ec && !dd,
+    dd:   dd
+  };
+}
+
+/**
+ * 水の本数（日報・フロアレポート・管理画面の集計・申告文で共通。御堂筋と同じ決まり）。
+ *  清掃員が入れていればその本数。
+ *  入れていなければ、チェックまで終わったアウトの部屋だけ自動で、
+ *  2名の部屋（ツイン・Wメイクの新規／継続／常設）は2本、ほかは1本。ステイ・DD・チェック前は 0。
+ */
+function waterOf_(r) {
+  if (r.water !== '' && r.water != null) return Number(r.water) || 0;
+  if (r.kbn !== 'OUT' || r.dd || r.check.state !== 'done') return 0;
+  return (r.twin || ROYAL_SET.indexOf(r.dmake) >= 0) ? 2 : 1;
+}
 
 /** 半角数字を全角に（紙の表題が「２F」なので） */
 function zen_(s) {
@@ -2380,11 +2666,18 @@ function buildFloorReport_(dateStr) {
   });
 
   const tpl = buildFloorTemplate_(ss);
+  // 同じ日に2回清掃した部屋は、前の回の清掃・チェックを備考に載せ、下の清掃合計件数にも足す
+  const hist = histOf_(date);
+  const byRoom = {};
+  list.forEach(r => { byRoom[r.room] = r; });
+  hist.forEach(h => { const r = byRoom[h.room]; if (r) (r.prev = r.prev || []).push(h); });
   const byFloor = {};
   list.forEach(r => { (byFloor[r.floor] = byFloor[r.floor] || []).push(r); });
   const floors = Object.keys(byFloor).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-  const GREY = '#AAAAAA', INK = '#000000', MARK = '#FFF2A8', WHITE = '#FFFFFF';
+  // 付いている印だけ色で塗り、ほかは薄くする（御堂筋と同じ色）
+  const GREY = '#B6BDC4', INK = '#000000', WHITE = '#FFFFFF';
+  const ON = { O: '#E08575', E: '#2A8C8C', F: '#9B4F8E', DD: '#2F6FBF', FR: '#1A242E' };
   const made = [];
 
   floors.forEach(f => {
@@ -2399,9 +2692,6 @@ function buildFloorReport_(dateStr) {
     /* 見出し */
     sh.getRange('A2').setValue('フロアレポート　' + zen_(f));
     sh.getRange('C3').setValue(date.replace(/-/g, '/'));
-    const who = {};
-    rooms.forEach(r => { if (r.clean.staff) who[r.clean.staff] = 1; });
-    sh.getRange('L3').setValue(Object.keys(who).join('・'));
     sh.getRange('S2').setValue(names[0] || '');
     sh.getRange('S3').setValue(names[1] || '');
     sh.getRange('X2').setValue(names[2] || '');
@@ -2419,7 +2709,11 @@ function buildFloorReport_(dateStr) {
     }
     rooms.forEach((r, i) => {
       const t = i * 2, b = t + 1;
-      const suf = String(parseInt(r.room.slice(-2), 10)) + (r.twin ? 'TW' : '');
+      // 部屋番号の下に、その日のベッドの形：TW＝ツイン、常設＝2名常設（ダブルメイク常設・オレンジ）、
+      // W＝ダブル（Wメイク新規・継続）、W→S＝増設解除（2名→1名、シングルに戻す）、S＝シングル
+      const bed = r.twin ? 'TW' : r.dmake === '常設' ? '常設' : ROYAL_SET.indexOf(r.dmake) >= 0 ? 'W'
+                : (r.dmake === '解除' || r.dmake === '増設解除して増設予定') ? 'W→S' : 'S';
+      const suf = String(parseInt(r.room.slice(-2), 10)) + '\n' + bed;
       const V = val[t], C = col[t], B = bg[t];
 
       V[0] = suf;
@@ -2427,25 +2721,31 @@ function buildFloorReport_(dateStr) {
       V[2] = r.bag ? '○' : '';
       V[3] = r.pickup ? '○' : '';
 
-      // O / S / F / DD：該当するものだけ黒の太字＋黄色。ほかは紙と同じグレー
-      [['O', 4, r.kbn === 'OUT'], ['S', 5, r.kbn === 'STAY'],
-       ['F', 6, r.kbn === 'FULL'], ['DD', 7, !!r.dd]].forEach(([s, c, on]) => {
-        V[c] = s; C[c] = on ? INK : GREY; B[c] = on ? MARK : WHITE;
+      // O / E / F / DD：付いているものだけ色で塗って白い字。ほかは薄いグレー（御堂筋と同じ）
+      // E（ECO）＝エコ清掃（EC）の部屋。エコに変わったフルも E（強制交換ではない）
+      [['O', 4, frMark_(r).out, ON.O], ['E', 5, frMark_(r).eco, ON.E],
+       ['F', 6, frMark_(r).full, ON.F], ['DD', 7, frMark_(r).dd, ON.DD]].forEach(([s, c, on, color]) => {
+        V[c] = s; C[c] = on ? WHITE : GREY; B[c] = on ? color : WHITE;
       });
 
-      // 冷蔵庫（清掃時 I列 / チェック時 W列）：上がON、下がOFF
+      // 冷蔵庫（清掃時 I列 / チェック時 W列）：上がON、下がOFF。付いているほうを紺で塗る
       [[8, r.fridge], [22, r.fridgeCheck]].forEach(([c, v]) => {
         val[t][c] = 'ON'; val[b][c] = 'OFF';
-        col[t][c] = v === 'ON'  ? INK : GREY; bg[t][c] = v === 'ON'  ? MARK : WHITE;
-        col[b][c] = v === 'OFF' ? INK : GREY; bg[b][c] = v === 'OFF' ? MARK : WHITE;
+        col[t][c] = v === 'ON'  ? WHITE : GREY; bg[t][c] = v === 'ON'  ? ON.FR : WHITE;
+        col[b][c] = v === 'OFF' ? WHITE : GREY; bg[b][c] = v === 'OFF' ? ON.FR : WHITE;
       });
 
-      V[9]  = (r.water !== '' && r.water != null) ? r.water + ' 本' : '本';
+      // 水：清掃員が入れた本数。入れていなければ waterOf_ の決まりで自動（御堂筋と同じ）
+      const w = waterOf_(r);
+      V[9]  = w ? w + ' 本' : '本';
       V[10] = r.clean.start  || '：';
       V[11] = r.clean.finish || '：';
       V[12] = r.clean.staff  || '';
       // 備考：業務中の追加指示と現場メモ
-      V[13] = [r.order ? '指示：' + r.order : '', r.memo || ''].filter(Boolean).join(' / ');
+      V[13] = (r.prev || []).map((h, k) => (k + 1) + '回目 清掃 ' + h.clean.staff + ' ' + h.clean.start + '〜' + h.clean.finish
+                 + (h.check.staff ? '・チェック ' + h.check.staff + ' ' + h.check.finish : ''))
+        .concat([r.order ? '指示：' + r.order : '', r.memo || '', r.report ? '報告：' + r.report : ''])
+        .filter(Boolean).join(' / ');
       const sd = spDay[r.room] || ['', '', ''];
       V[19] = sd[0]; V[20] = sd[1]; V[21] = sd[2];
       V[23] = r.check.start  || '：';
@@ -2457,6 +2757,7 @@ function buildFloorReport_(dateStr) {
     block.setValues(val);
     block.setFontColors(col);
     block.setBackgrounds(bg);
+    sh.getRange(FR_TOP, 1, N, 1).setWrap(true).setFontSize(10);   // 部屋番号の下にベッドの形（S・W・TW・W→S）
 
     // 部屋の無い枠は隠す
     if (rooms.length < FR_SLOTS) {
@@ -2466,13 +2767,14 @@ function buildFloorReport_(dateStr) {
     /* 下の集計 */
     const F = FR_FOOT;
     const cnt = fn => rooms.filter(fn).length;
-    const water = rooms.reduce((a, r) => a + (Number(r.water) || 0), 0);
+    const fh = hist.filter(h => h.floor === f);
+    const water = rooms.concat(fh).reduce((a, r) => a + waterOf_(r), 0);   // 2回目以前の回の水も足す
     sh.getRange(F, 3).setValue(cnt(r => r.bag) + ' 室');
     sh.getRange(F, 4).setValue(cnt(r => r.pickup) + ' 室');
-    sh.getRange(F, 5).setValue(cnt(r => r.kbn === 'OUT') + ' 室');
-    sh.getRange(F, 6).setValue(cnt(r => r.kbn === 'STAY') + ' 室');
-    sh.getRange(F, 7).setValue(cnt(r => r.kbn === 'FULL') + ' 室');
-    sh.getRange(F, 8).setValue(cnt(r => r.dd) + ' 室');
+    sh.getRange(F, 5).setValue(cnt(r => frMark_(r).out) + ' 室');
+    sh.getRange(F, 6).setValue(cnt(r => frMark_(r).eco) + ' 室');
+    sh.getRange(F, 7).setValue(cnt(r => frMark_(r).full) + ' 室');
+    sh.getRange(F, 8).setValue(cnt(r => frMark_(r).dd) + ' 室');
     sh.getRange(F, 10).setValue(water + ' 本');
 
     const dd = rooms.filter(r => r.dd).map(r => r.room);
@@ -2484,9 +2786,10 @@ function buildFloorReport_(dateStr) {
 
     // 本日の清掃合計件数：DD以外で、チェックまで終わった部屋
     const done = r => !r.dd && r.check.state === 'done';
-    const o = cnt(r => r.kbn === 'OUT'  && done(r));
-    const s = cnt(r => r.kbn === 'STAY' && done(r));
-    const u = cnt(r => r.kbn === 'FULL' && done(r));
+    const cnt2 = fn => rooms.filter(fn).length + fh.filter(fn).length;
+    const o = cnt2(r => frMark_(r).out  && done(r));
+    const s = cnt2(r => frMark_(r).eco  && done(r));
+    const u = cnt2(r => frMark_(r).full && done(r));
     sh.getRange('S' + (F + 9)).setValue(o + ' 室');
     sh.getRange('U' + (F + 9)).setValue(s + ' 室');
     sh.getRange('W' + (F + 9)).setValue(u + ' 室');
@@ -2587,7 +2890,9 @@ function buildManagerReport_(dateStr) {
     .filter(r => String(r[1]).trim()).map(reportRoom_);
 
   const checked = r => r.check.state === 'done';
-  const target  = list.filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
+  // 同じ日の2回目以降の清掃は、前の回の記録も清掃数に足す（日報と同じ）
+  const target  = list.filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0)
+    .concat(histOf_(date).filter(r => ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0 && !r.dd));
 
   const n = {
     clean:   target.filter(r => !r.dd && checked(r)).length,   // DD除く
@@ -2621,7 +2926,7 @@ function buildManagerReport_(dateStr) {
   // 出勤者：清掃かチェックで入室した人。名簿の並び順
   const staff = getStaffList();
   const came = {};
-  list.forEach(r => {
+  target.concat(list).forEach(r => {
     if (r.clean.staff) came[r.clean.staff] = 1;
     if (r.check.staff) came[r.check.staff] = 1;
   });
@@ -2844,8 +3149,17 @@ function buildSpecialSheet_(ym) {
     byFloor[f][no] = 1;
   });
   const floors = Object.keys(byFloor).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-  const cols   = floors.map(f => Object.keys(byFloor[f]).sort(cmpRoom_));
-  const maxRow = cols.reduce((a, c) => Math.max(a, c.length), 0);
+  /*
+   * 行は部屋番号の末尾（下2桁）でそろえる。216 が 316 の横に来るように、無い部屋（205 など）のところは空ける。
+   * cols[階][末尾−1] が部屋番号（無ければ空）。打刻ログへの反映（handleSpecialEdit_）と、その場の書き直し（spSheetSync_）も同じ並びで引く。
+   */
+  const sufOf = no => parseInt(String(no).slice(-2), 10);
+  const maxRow = floors.reduce((m, f) => Math.max(m, ...Object.keys(byFloor[f]).map(sufOf)), 0);
+  const cols   = floors.map(f => {
+    const a = new Array(maxRow).fill('');
+    Object.keys(byFloor[f]).forEach(no => { const k = sufOf(no); if (k >= 1) a[k - 1] = no; });
+    return a;
+  });
   const W = Math.max(floors.length, 11);           // 日別は1行11日ぶん。紙と同じ
 
   /*************** 描画 ***************
@@ -2933,6 +3247,7 @@ function buildSpecialSheet_(ym) {
     Object.keys(day).forEach(no => { count[day[no]]++; });
 
     const bTop = r;
+    layout[layout.length - 1].bTop = bTop;           // 日別の実施数の表の先頭（清掃員が押したときの書き直しに使う）
     for (let g = 0; g < 3; g++) {
       const labs = [], vals = [];
       for (let k = 0; k < 11; k++) {
@@ -3005,7 +3320,7 @@ function buildSpecialSheet_(ym) {
   // 取り込みのときに、どの行のどの列が何号室かを引けるよう配置を残す
   props_().setProperty('SP_MAP_' + month, JSON.stringify({
     month: month, maxRow: maxRow, cols: cols,
-    tops: layout.map(x => x.top)
+    tops: layout.map(x => x.top), bTops: layout.map(x => x.bTop), sTop: sTop
   }));
 
   return {
@@ -3029,6 +3344,55 @@ function buildSpecialSheet_(ym) {
  */
 function onSpecialSheetEdit(e) {
   try { if (e && e.range) handleSpecialEdit_(e); } catch (err) { console.warn('特別清掃シートの反映: ' + err); }
+}
+
+/**
+ * 清掃員画面で特別清掃を押したら、「特別清掃」シートもその場で書き直す（作り直さなくても最新になる）。
+ *  その月のシートがあるときだけ。書き直すのは、その部屋の日にちのマスと、その枠の日別の実施数・実施数・残数・まとめ。
+ *  シートを作ったあとに出てきた部屋（マスが無い）は、次に「特別清掃シートを作る」を押すと入る。
+ *  スクリプトからの書き込みでは編集のトリガー（onSpecialSheetEdit）は動かない。
+ *  失敗しても打刻ログの記録は済んでいるので止めない（次に作り直せば合う）。
+ */
+function spSheetSync_(date, rooms, patch) {
+  try {
+    const slots = SPECIAL.map(([key], i) => (key in patch) ? i : -1).filter(i => i >= 0);
+    if (!slots.length) return;
+    const month = String(date).slice(0, 7);
+    const map = JSON.parse(props_().getProperty('SP_MAP_' + month) || 'null');
+    const sh = ss_().getSheetByName(SPECIAL_SHEET);
+    if (!map || !sh) return;
+    if (String(sh.getRange(1, 1).getValue()) !== '特別清掃　' + month.replace('-', '年') + '月') return;   // 別の月のシート
+    spDoneClear_(month);
+    const done = spDoneMap_(month);                                     // 部屋 → [[日…],[日…],[日…]]
+    const lastOf = (no, i) => { const d = (done[no] || [[], [], []])[i] || []; return d.length ? Math.max.apply(null, d) : 0; };
+    slots.forEach(i => {
+      rooms.forEach(no => {
+        const f = map.cols.findIndex(list => list.indexOf(no) >= 0);
+        if (f < 0 || !map.tops[i]) return;
+        const k = map.cols[f].indexOf(no);
+        sh.getRange(map.tops[i] + k * 2 + 1, f + 1).setValue(lastOf(no, i) || '');
+      });
+      if (!map.bTops || !map.bTops[i]) return;                          // 前の版で作ったシートは、日にちのマスだけ
+      // 日別の実施数（1行11日×3段）。部屋ごとに、その月で最後にやった日で数える（シートを作るときと同じ）
+      const count = new Array(32).fill(0);
+      let n = 0;
+      Object.keys(done).forEach(no => { const d = lastOf(no, i); if (d) { count[d]++; n++; } });
+      const rest = n - SPECIAL_TOTAL;
+      for (let g = 0; g < 3; g++) {
+        const vals = [];
+        for (let c = 0; c < 11; c++) {
+          const d = g * 11 + c + 1;
+          vals.push(d <= 31 ? count[d] : d === 32 ? n + ' 部屋' : rest + ' 部屋');
+        }
+        sh.getRange(map.bTops[i] + g * 2 + 1, 1, 1, 11).setValues([vals]);
+      }
+      sh.getRange(map.bTops[i] + 5, 11).setFontColor(rest < 0 ? '#B5442F' : '#2E7D4F');
+      if (map.sTop) {
+        sh.getRange(map.sTop + 1 + i, 4, 1, 2).setValues([[n, rest]]);
+        sh.getRange(map.sTop + 1 + i, 5).setFontColor(rest < 0 ? '#B5442F' : '#2E7D4F');
+      }
+    });
+  } catch (e) { console.warn('特別清掃シートの書き直し: ' + e); }
 }
 
 function handleSpecialEdit_(e) {
@@ -3055,6 +3419,9 @@ function handleSpecialEdit_(e) {
       const raw = String(e.range.getValue() || '').trim();
       const d = Number(raw.replace(/[^0-9]/g, ''));
       applyOneSpecial_(no, month, sp[1], (d >= 1 && d <= 31) ? d : 0);
+      // 手で直したマスの下の、日別の実施数・実施数・残数・まとめも合わせる（「5日」などの書き方も数字にそろう）
+      const p = {}; p[sp[0]] = true;
+      spSheetSync_(month + '-01', [no], p);
       return;
     }
   });
@@ -3224,7 +3591,7 @@ function archiveOldLogs() {
     const put = old.filter(r => !had[key(r)]);
     const at = appendAt_(ar, Math.max(put.length, 1));
     // 文字の列（時刻・メモ・記録など）は文字列に固定してから書く。日付や数字に化けないように
-    if (put.length) [2, 7, 8, 9, 28, 29, 34, 43, 44, 45, ORDER_COL].forEach(c => ar.getRange(at, c, put.length, 1).setNumberFormat('@'));
+    if (put.length) [2, 7, 8, 9, 28, 29, 34, 43, 44, 45, ORDER_COL, FLAG_COL.report, ORDER_ACK_COL].forEach(c => ar.getRange(at, c, put.length, 1).setNumberFormat('@'));
     if (put.length) ar.getRange(at, 1, put.length, NCOL).setValues(put);
     SpreadsheetApp.flush();
     // 保管に書けたのを確かめてから、打刻ログの先頭の古い行だけ消す
@@ -3242,6 +3609,7 @@ function archiveOldLogs() {
 /** 毎朝5時台に走らせる。古い打刻ログを保管へ移し、古いフロアレポートPDFをゴミ箱へ */
 function dailyMaintenance() {
   archiveOldLogs();
+  try { cleanupFloorTeams_(); } catch (e) {}
   try { cleanupManual_(); } catch (e) {}
   try { cleanupFloorReports_(); } catch (e) {}
   try { cleanupPhotos_(); } catch (e) {}
@@ -3336,7 +3704,13 @@ function getSummary(pin, ...a) { needAdmin_(pin); return getSummary_(...a); }
 function getStaffAverages(pin, ...a) { needAdmin_(pin); return getStaffAverages_(...a); }
 function getSpecial(pin, ...a) { needAdmin_(pin); return getSpecial_(...a); }
 function getStale(pin, ...a) { needAdmin_(pin); return getStale_(...a); }
-function setSpecialNames(pin, ...a) { needAdmin_(pin); return setSpecialNames_(...a); }
+function setSpecialNames(pin, ...a) {
+  needAdmin_(pin);
+  const r = setSpecialNames_(...a);
+  // 特別清掃シートの見出し（項目名）も変わるので、その月のシートを作り直す。失敗しても名前の保存は済んでいる
+  try { r.sheet = buildSpecialSheet_(r.month).url; } catch (e) { r.sheetError = e.message; }
+  return r;
+}
 function buildSpecialSheet(pin, ...a) { needAdmin_(pin); return buildSpecialSheet_(...a); }
 function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReportGuarded_(...a); }
 function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReportGuarded_(...a); }

@@ -5,7 +5,7 @@
  *  1枚目 ルームインジケーター … 部屋番号・状態コード（印刷）。12F〜02F・列1〜17、上に集計ボックス
  *         PDF なら管理画面で表を高解像度の画像2枚（12F〜07F／06F〜02F）に切り出して読む
  *  2枚目 清掃指示書           … フル清掃・ノーメイク・アーリーIN・レイトアウト・延泊 など（1枚）
- *  3枚目 ダブルメイク指示書   … 色マス（常設・継続・新規・解除・増設予定）、欄外にコネクト・ツイン
+ *  3枚目 ダブルメイク指示書   … 色マス（新規・継続・解除・常設・ベッド下収納常設・増設セット解除）、欄外にコネクト・ツイン
  *
  * インジケーターの手書きは、清掃指示書の内容を現場で転記したもの。
  * 手書きは読まず、活字の清掃指示書から取る。精度が段違いに高い。
@@ -33,7 +33,9 @@ const IND_KBN = {
   O: 'OUT', D: 'OUT',
   S: 'STAY', SD: 'STAY',
   V: 'V',
-  I: 'NONE', C: 'NONE', P: 'NONE', X: 'NONE', A: 'NONE'
+  // C（清掃）は清掃しない部屋なので空室と同じ V にする（検算は紙の文字 C のまま数える）
+  C: 'V',
+  I: 'NONE', P: 'NONE', X: 'NONE', A: 'NONE'
 };
 function kbnOf_(code, full) {
   const k = IND_KBN[String(code || '').toUpperCase()] || 'NONE';
@@ -77,6 +79,9 @@ function roomList_() {
   return list;
 }
 const ROOMS = roomList_();
+
+/** 常にツインの部屋（ダブルメイク指示書の欄外の「1209・1211ツイン」が無い日や読み落とした日でも TW にする） */
+const TWIN_FIXED = ['1209', '1211'];
 const ROOM_SET = {};
 ROOMS.forEach(r => { ROOM_SET[r] = 1; });
 
@@ -396,13 +401,76 @@ function indicatorSchema_() {
 /*************************************************
  * 2枚目 清掃指示書
  *************************************************/
+/**
+ * 清掃指示書も、インジケーターと同じく読み方を変えて2回読み、突き合わせる（同時に投げるので待ち時間は1回ぶん）。
+ * 1回だけだと、フル清掃の欄の部屋を読み落とすことがあった（11/03。2回目に読み直すと読めた）。
+ * 部屋の一覧（フル清掃・ノーメイク・リネン交換依頼・アーリーイン・レイトアウト・延泊など）は2回の和をとり、
+ * 片方だけに出た部屋は要確認に回す（落とすより出して人が見るほうが安全）。
+ */
 function readOrder_(base64, mimeType) {
-  const parsed = callGemini_(apiKey_(), base64, mimeType, orderPrompt_(), orderSchema_());
-  return Object.assign(normOrder_(parsed), { usage: USAGE_ });
+  const key = apiKey_();
+  const out = callGeminiMany_(key, [
+    { base64: base64, mimeType: mimeType, prompt: orderPrompt_('down'), schema: orderSchema_() },
+    { base64: base64, mimeType: mimeType, prompt: orderPrompt_('up'),   schema: orderSchema_() }
+  ]);
+  return Object.assign(mergeOrders_(normOrder_(out[0]), normOrder_(out[1])), { usage: USAGE_ });
 }
 
-function orderPrompt_() {
+/** 2回の読みを1つにする。部屋の一覧は和をとり、片方だけの部屋を split に残す */
+function mergeOrders_(a, b) {
+  const split = [];                                   // [{ field: 'フル清掃', room: '1103' }]
+  const uni = (x, y, label) => {
+    const out = x.slice();
+    y.forEach(no => { if (out.indexOf(no) < 0) out.push(no); });
+    out.forEach(no => { if ((x.indexOf(no) < 0) !== (y.indexOf(no) < 0)) split.push({ field: label, room: no }); });
+    return out;
+  };
+  // 時刻ごとの部屋（アーリーイン・レイトアウト）：時刻と部屋の組で和をとる
+  const slots = (x, y, label) => {
+    const key = s => s.rooms.map(no => s.time + '|' + no);
+    const kx = [].concat.apply([], x.map(key)), ky = [].concat.apply([], y.map(key));
+    const all = kx.slice(); ky.forEach(k => { if (all.indexOf(k) < 0) all.push(k); });
+    all.forEach(k => { if ((kx.indexOf(k) < 0) !== (ky.indexOf(k) < 0)) split.push({ field: label + ' ' + k.split('|')[0], room: k.split('|')[1] }); });
+    const by = {};
+    all.forEach(k => { const [t, no] = k.split('|'); (by[t] = by[t] || []).push(no); });
+    return Object.keys(by).sort().map(t => ({ time: t, rooms: by[t] }));
+  };
+  const o = Object.assign({}, a);
+  o.fullClean    = uni(a.fullClean, b.fullClean, 'フル清掃');
+  o.linenRequest = uni(a.linenRequest, b.linenRequest, 'リネン交換依頼');
+  o.popCollect   = uni(a.popCollect, b.popCollect, 'POP回収');
+  o.extend       = uni(a.extend, b.extend, '延泊');
+  o.handwritten  = uni(a.handwritten, b.handwritten, '手書き');
+  o.struck       = uni(a.struck, b.struck, '取り消し線');
+  o.earlyIn      = slots(a.earlyIn, b.earlyIn, 'アーリーイン');
+  o.lateOut      = slots(a.lateOut, b.lateOut, 'レイトアウト');
+  // ノーメイク：部屋で和をとる（要・不要は読めたほうを使う）
+  const nm = a.noMake.slice();
+  b.noMake.forEach(x => { const h = nm.filter(y => y.room === x.room)[0]; if (!h) nm.push(x); else if (!h.need && x.need) h.need = x.need; });
+  nm.forEach(x => { if (!a.noMake.some(y => y.room === x.room) || !b.noMake.some(y => y.room === x.room)) split.push({ field: 'ノーメイク', room: x.room }); });
+  o.noMake = nm;
+  // ルームチェンジ・特記：同じものは1つに
+  o.roomChange = a.roomChange.concat(b.roomChange.filter(x => !a.roomChange.some(y => y.from === x.from && y.to === x.to)));
+  o.notes = a.notes.concat(b.notes.filter(x => !a.notes.some(y => y.room === x.room && y.text === x.text)));
+  o.allNotes = a.allNotes.length >= b.allNotes.length ? a.allNotes : b.allNotes;
+  // 数字の欄：1回目が読めなければ2回目。2回で違えば要確認の欄に入れる
+  ['date', 'maker', 'orderCount', 'plannedTotal'].forEach(k => {
+    if (o[k] == null || o[k] === '') o[k] = b[k];
+    else if (b[k] != null && b[k] !== '' && String(b[k]) !== String(o[k]) && o.uncertain.indexOf(k) < 0) o.uncertain = o.uncertain.concat([k]);
+  });
+  if (!o.planned.length) o.planned = b.planned;
+  else b.planned.forEach(x => { const h = o.planned.filter(y => y.floor === x.floor)[0];
+    if (h && x.rooms != null && h.rooms !== x.rooms && o.uncertain.indexOf('planned') < 0) o.uncertain = o.uncertain.concat(['planned']); });
+  b.uncertain.forEach(u => { if (o.uncertain.indexOf(u) < 0) o.uncertain = o.uncertain.concat([u]); });
+  o.split = split;
+  return o;
+}
+
+function orderPrompt_(order) {
   return [
+    order === 'up'
+      ? '※ 今回は各欄を下の行から順に読み、最後に欄の部屋番号を数え直して、1つも落としていないか確かめてください。'
+      : '※ 各欄を上の行から順に読み、部屋番号を1つも落とさないこと。欄の中の部屋番号はすべて拾う。',
     'これはホテルの「清掃指示書」です。フロントが作成し、その日の清掃の指示をまとめた紙です。',
     '印刷された内容と、ペンでの手書きの追記が混在しています。両方を読み取ってください。',
     '手書きで書かれた部屋番号は handwritten の配列にも入れてください（後で人が確認するため）。',
@@ -537,7 +605,20 @@ function normOrder_(p) {
  *  部屋番号のマス目に色が塗ってある。色が作業の区分を表す。
  *  欄外にコネクト・ツインの組が書かれている。
  *************************************************/
-const DMAKE_KINDS = ['新規', '継続', '解除', '常設', '増設予定', '増設解除して増設予定'];
+/**
+ * ダブルメイク指示書の区分。11/03 の紙の凡例で確かめた：
+ *   緑＝ダブルメイク新規　黄＝ダブルメイク継続　赤＝解除　オレンジ（茶）＝ダブルメイク常設
+ *   青＝ベッド下収納常設部屋（ふつうの1名の部屋）
+ *   ピンク＝増設セット解除→ベッド下収納常設部屋に変更（＝今日シングルに戻す。解除として扱う）
+ * 前は青を「増設予定」、ピンクを「増設解除して増設予定」と思い込んでいて、ピンクの部屋が解除にならなかった（11/03 の3F）。
+ * 古い保存の値（増設予定・増設解除して増設予定）も読めるよう残す。
+ */
+const DMAKE_KINDS = ['新規', '継続', '解除', '常設', 'ベッド下収納', '増設予定', '増設解除して増設予定'];
+/**
+ * Gemini に返させる区分。ピンクは「解除→ベッド下収納」で返させ、取り込みでは解除にする。
+ * 決められないときは「不明」。※ Gemini の enum に空文字は入れられない（入れると 400 で断られる。11/03 に起きた）
+ */
+const DMAKE_READ = ['新規', '継続', '解除', '常設', 'ベッド下収納', '解除→ベッド下収納', '不明'];
 
 /** 日報の「ロイヤル（増設含む）」に数える色 */
 const ROYAL_KINDS = ['新規', '継続', '常設'];
@@ -549,24 +630,28 @@ function readDouble_(base64, mimeType) {
 
 function doublePrompt_() {
   return [
-    'これはホテルの「ダブルメイク指示書」です。',
+    'これはアパホテル〈新大阪 南方駅前〉の「ダブルメイク指示書」です。',
     'ダブルメイクとは、ベッドが1台の部屋に2人が泊まるときに寝具を2人分用意する作業のことです。',
     '',
     '■ 表の形',
-    '- 部屋番号が書かれたマスが格子状に並んでいます。上の行が高い階、下の行が低い階です。',
+    '- 部屋番号が書かれたマスが格子状に並んでいます。上の行が高い階（12F）、下の行が低い階（2F）です。',
     '- 1つのマスに部屋番号が1つ。マスの塗りつぶしの色が、その部屋の区分を表します。',
     '- 真っ黒に塗りつぶされたマスは「部屋が存在しない」印です。出力しないでください。',
+    '- 白（塗りなし）のマスは区分なし。出力しなくてよい。',
     '',
-    '■ 色と区分 ※凡例が紙の下に印刷されています',
-    '- 緑　　　　→ 新規',
-    '- 黄色　　　→ 継続',
-    '- 赤　　　　→ 解除',
-    '- 茶色・オレンジ → 常設',
-    '- 青　　　　→ 増設予定',
-    '- 薄い赤・サーモンピンク → 増設解除して増設予定',
-    '- 白・無色　→ 区分なし。kind を空文字にする',
-    '色の見分けがつかないときは kind を空文字にして、uncertain に "kind" を入れてください。',
-    '赤と茶色、緑と青は取り違えやすいので落ち着いて見てください。',
+    '■ 色と区分 ※最重要。紙の左下の凡例（色の四角と「→〇〇」の説明）を必ず先に読み、それに合わせる',
+    'ふだんの凡例は次のとおり。kind にはこの右側の言葉をそのまま入れる。',
+    '- 緑　　　　　　　　　　「→ダブルメイク 新規」　　　　　　　　　　　→ 新規',
+    '- 黄色　　　　　　　　　「→ダブルメイク継続」　　　　　　　　　　　→ 継続',
+    '- 赤（濃い・あざやか）　「→解除」　　　　　　　　　　　　　　　　　→ 解除',
+    '- オレンジ・茶色　　　　「→ダブルメイク常設」　　　　　　　　　　　→ 常設',
+    '- 青　　　　　　　　　　「→ベッド下収納常設部屋」　　　　　　　　　→ ベッド下収納',
+    '- ピンク（薄い赤）　　　「→増設セット解除→ベッド下収納常設部屋に変更」→ 解除→ベッド下収納',
+    '凡例の説明がこれと違う日は、凡例の説明に近い言葉を選ぶ（「解除」を含む説明の色は 解除 か 解除→ベッド下収納）。',
+    '見分け方：オレンジ（常設）は黄みが強い。ピンク（解除→ベッド下収納）は白っぽい桃色。赤（解除）は濃い。',
+    '迷ったら凡例の四角の色とマスの色を並べて比べる。それでも決められないときは kind を「不明」にする。',
+    '',
+    '■ legend：凡例の色と説明を、上から順に [{color:"緑", text:"ダブルメイク 新規"}, …] で入れる（確認用）',
     '',
     '■ 欄外の書き込み',
     '- 「909・910コネクト」のように書かれた組 → connects に [["909","910"], ...] の形で入れる',
@@ -586,11 +671,13 @@ function doubleSchema_() {
     type: 'OBJECT',
     properties: {
       date: { type: 'STRING' },
+      legend: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        color: { type: 'STRING' }, text: { type: 'STRING' } }, required: ['color', 'text'] } },
       rooms: { type: 'ARRAY', items: {
         type: 'OBJECT',
         properties: {
           room: { type: 'STRING' },
-          kind: { type: 'STRING' },
+          kind: { type: 'STRING', enum: DMAKE_READ },
           uncertain: { type: 'ARRAY', items: { type: 'STRING' } }
         },
         required: ['room', 'kind']
@@ -608,16 +695,20 @@ function normDouble_(p) {
     .map(x => (Array.isArray(x) ? x : []).map(y => String(y).replace(/[^0-9]/g, '')).filter(Boolean))
     .filter(x => x.length >= 2);
 
+  // ピンク（増設セット解除→ベッド下収納常設部屋に変更）は今日シングルに戻すので解除にする
+  const ALIAS = { '解除→ベッド下収納': '解除', '増設解除して増設予定': '解除', 'ベッド下収納常設': 'ベッド下収納' };
+  const unsure = [];
   const rooms = (Array.isArray(p.rooms) ? p.rooms : []).map(r => {
-    const kind = String(r.kind || '').trim();
-    return {
-      room: String(r.room || '').replace(/[^0-9]/g, ''),
-      kind: DMAKE_KINDS.indexOf(kind) >= 0 ? kind : ''
-    };
+    const raw = String(r.kind || '').trim(), kind = raw === '不明' ? '' : (ALIAS[raw] || raw);
+    const room = String(r.room || '').replace(/[^0-9]/g, '');
+    if (room && (!kind || (Array.isArray(r.uncertain) && r.uncertain.indexOf('kind') >= 0))) unsure.push(room);
+    return { room: room, kind: DMAKE_KINDS.indexOf(kind) >= 0 ? kind : '', from: raw };
   }).filter(r => r.room && r.kind);
 
   return {
     date: String(p.date || '').trim(),
+    legend: (Array.isArray(p.legend) ? p.legend : []).map(x => String(x.color || '').trim() + '→' + String(x.text || '').trim()).filter(x => x.length > 1),
+    unsure: unsure,
     rooms: rooms,
     connects: pairs(p.connects),
     twins: pairs(p.twins),
@@ -756,6 +847,12 @@ function mergeSheets_(rooms, order, dbl) {
   }));
 
   // 手書きで書かれた部屋は人の確認へ回す
+  // 清掃指示書の2回の読みで、片方だけに出た部屋は人が紙と見比べる
+  (order.split || []).forEach(x => touch(x.room, r => {
+    const why = '清掃指示書の2回の読みで食い違い（' + x.field + '）';
+    if (r.uncertain.indexOf(why) < 0) r.uncertain.push(why);
+  }));
+
   order.handwritten.forEach(no => touch(no, r => {
     r.handwritten = true;
     if (r.uncertain.indexOf('指示書の手書き') < 0) r.uncertain.push('指示書の手書き');
@@ -774,12 +871,27 @@ function mergeSheets_(rooms, order, dbl) {
     const by = {};
     rooms.forEach(r => { by[r.room] = r; });
     dbl.rooms.forEach(x => { if (by[x.room]) by[x.room].dmake = x.kind; });
+    // 色を決められなかった部屋だけ要確認に回す（赤とピンクはどちらも解除なので、取り違えても結果は同じ）
+    (dbl.unsure || []).forEach(no => {
+      const r = by[no];
+      if (r && r.uncertain.indexOf('ダブルメイク指示書の色が読めなかった') < 0) r.uncertain.push('ダブルメイク指示書の色が読めなかった');
+    });
     dbl.twins.forEach(pair => pair.forEach(no => { if (by[no]) by[no].twin = true; }));
     dbl.connects.forEach(pair => pair.forEach(no => { if (by[no]) by[no].connect = pair.join('・'); }));
   }
+  // 1209・1211 は常にツイン（指示書の欄外に無い日・ダブルメイク指示書が無い日でも）
+  rooms.forEach(r => { if (TWIN_FIXED.indexOf(r.room) >= 0) r.twin = true; });
 
+  const v = verify_(rooms, order, orphan, ruled);
+  // ダブルメイク指示書は、読んだ凡例と、今日シングルに戻す部屋を並べて、紙と見比べられるようにする
+  if (dbl) {
+    if ((dbl.legend || []).length) v.warn.push('ダブルメイク指示書の凡例（読んだもの）：' + dbl.legend.join('、'));
+    const rel = rooms.filter(r => r.dmake === '解除').map(r => r.room).sort(cmpRoomNo_);
+    if (rel.length) v.warn.push('今日シングルに戻す部屋（赤の解除・ピンクの増設セット解除）' + rel.length + '室：' + rel.join('、'));
+    if ((dbl.unsure || []).length) v.warn.push('ダブルメイク指示書で色が読めなかった部屋：' + dbl.unsure.join('、'));
+  }
   return { rooms: rooms, order: order, ruled: ruled, dbl: dbl || null,
-           verify: verify_(rooms, order, orphan, ruled) };
+           verify: v };
 }
 
 
@@ -862,6 +974,8 @@ function verify_(rooms, order, orphan, ruled) {
 
   if (orphan.length) warn.push('指示書にあってインジケーターにない部屋：' + orphan.join('、'));
   if (order.uncertain.length) warn.push('指示書で読み取りに自信がない欄：' + order.uncertain.join('、'));
+  if ((order.split || []).length) warn.push('清掃指示書の2回の読みで食い違った部屋（片方だけで読めた。紙と見比べてください）：'
+    + order.split.map(x => x.room + '（' + x.field + '）').join('、'));
   if (order.handwritten.length) warn.push('指示書の手書き：' + order.handwritten.join('、'));
   if ((order.struck || []).length)
     warn.push('取り消し線が引かれた特記（載せていません）：' + order.struck.join('、'));

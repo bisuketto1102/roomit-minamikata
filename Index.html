@@ -6,13 +6,14 @@
   :root{
     --bg:#F2F4F6; --surface:#FFF; --ink:#1A242E; --muted:#6E7B87; --line:#DCE1E6;
     /* インジケーターの紙と同じ色にそろえる */
-    --c-O:#E08575;      /* アウト済 */
-    --c-D:#F4C4CB;      /* アウト前 */
+    --c-O:#DD6A53;      /* アウト済 濃い赤（御堂筋と同じ色） */
+    --c-D:#F4BFB5;      /* アウト前 薄いピンク */
     --c-S:#EDE59A;      /* ステイ 黄色 */
     --c-V:#7FC47F;      /* 空室 緑 */
     --c-X:#AAB3BB;      /* 対象外 グレー */
     --prog:#A8CBEA; --fin:#3F86CE; --chk:#6FB847;
     --action:#1B5E8C; --warn:#C77A15; --ng:#B5442F;
+    --chrome:#17324D;   /* 階の見出し（PMS の画面のような落ち着いた紺。御堂筋と同じ） */
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   [hidden]{display:none!important}
@@ -85,13 +86,25 @@
   .meter span{display:block;height:100%;width:0;transition:width .6s var(--ease)}
   .meter .m1{background:var(--chk)} .meter .m2{background:var(--fin)}
   /* 指示・回収・未送信 */
-  .quick{display:flex;gap:6px;align-items:center;margin-top:9px;flex-wrap:wrap}
+  .quick{display:flex;gap:6px;align-items:center;margin-top:9px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .quick::-webkit-scrollbar{display:none}
+  .quick > *{flex:0 0 auto}
   .qchip{display:flex;align-items:center;gap:5px;height:32px;padding:0 14px;border-radius:16px;font-size:14px;font-weight:600;
          transition:transform .25s var(--spring),background .15s}
   .qchip:active{transform:scale(.92);transition-duration:.06s}
   .qchip .n{min-width:19px;height:19px;line-height:19px;border-radius:10px;background:var(--ng);color:#fff;font-size:11.5px;
             font-weight:700;text-align:center;padding:0 5px}
   .qrow{display:flex;gap:6px}
+  #mineBtn.on{background:var(--chrome);color:#fff}
+  /* 早仕上げの状況 */
+  .er{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:var(--hair)}
+  .er .rb{flex:0 0 auto;min-width:62px;border:0;border-radius:9px;padding:6px 10px;font-size:17px;font-weight:700;
+          font-variant-numeric:tabular-nums;background:var(--fill2);text-align:center}
+  .er .st{flex:0 0 auto;font-size:12.5px;font-weight:700;border-radius:999px;padding:3px 10px;color:#fff}
+  .er .st.todo{background:var(--ng)} .er .st.doing{background:#5B9BD5} .er .st.done{background:var(--fin)} .er .st.ckd{background:var(--chk)}
+  .er .tm{flex:1;font-size:13.5px;font-variant-numeric:tabular-nums;text-align:right;color:var(--ink)}
+  .er .tm small{display:block;font-size:11.5px;color:var(--muted)}
+  .er.late .tm small{color:var(--ng);font-weight:700}
   .qrow[hidden]{display:none}
   .qpill{display:flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:16px;
          background:#FDF0DC;color:#8A5300;font-size:12.5px;font-weight:800;white-space:nowrap;transition:transform .25s var(--spring)}
@@ -154,85 +167,110 @@
     *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
   }
 
-  .rack{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:10px}
-  .flr{display:flex;border-bottom:1px solid var(--line)}
-  .flr:last-child{border-bottom:0}
-  .flr .lbl{flex:0 0 44px;display:flex;align-items:center;justify-content:center;
-            font-size:15px;font-weight:700;border-right:1px solid var(--line);font-variant-numeric:tabular-nums}
-  .cells{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 6px;padding:11px 8px}
-  @media(min-width:560px){.cells{grid-template-columns:repeat(6,minmax(0,1fr))}}
+  /* ---------- 部屋のマス（御堂筋と同じ：マスの色＝部屋の状態。PMS のルームインジケーターと同じ考え方） ---------- */
+  .rack{background:var(--surface);margin-top:10px}
+  .flr{display:flex}
+  .flr .lbl{flex:0 0 44px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;
+            padding:10px 2px 6px;background:var(--chrome);color:#fff;font-size:14px;font-weight:700;
+            font-variant-numeric:tabular-nums;text-align:center}
+  /* 階の担当（押すと自分が担当になる／外れる） */
+  .flr .lbl [id^="tm-"]{display:flex;flex-direction:column;align-items:center;width:100%}
+  .flr .lbl .tm{display:block;width:100%;font-size:10px;font-weight:600;line-height:1.25;color:#D3E6F8;
+                text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .flr .lbl .tm.mine{color:#FFE08A}
+  .flr .lbl .tm.none{width:22px;height:22px;margin-top:2px;border:1px dashed rgba(255,255,255,.45);border-radius:50%;
+                     font-size:15px;font-weight:400;line-height:20px;color:rgba(255,255,255,.7)}
+  /* 1階17室が4段に収まるよう5列 */
+  .cells{flex:1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:6px}
+  @media(min-width:560px){.cells{grid-template-columns:repeat(8,minmax(0,1fr))}}
 
-  .cell{text-align:left;transition:transform .08s ease;
-        /* 印（フル・特3 など）が2段に折り返す部屋があっても、同じ段の部屋で色の帯の高さをそろえる */
-        display:flex;flex-direction:column;justify-content:flex-end}
-  .cell .rno{margin-bottom:auto}
+  .cell{position:relative;display:flex;flex-direction:column;height:64px;padding:5px 5px 10px;border-radius:6px;
+        background:var(--c-X);color:var(--ink);text-align:left;overflow:hidden;transition:transform .08s ease;touch-action:manipulation}
   .cell:active{transform:scale(.95)}
-  .cell .rno{display:flex;align-items:center;flex-wrap:wrap;gap:2px 3px;font-size:17px;font-weight:600;
-             font-variant-numeric:tabular-nums;line-height:1.25;padding:0 2px 2px}
-  .cell .rno .sp{margin-left:auto}
-  .cell .bdg{font-size:9.5px;font-weight:700;border-radius:3px;padding:1px 4px;line-height:1.4;flex:0 0 auto;color:#fff}
-  .b-dd{background:#2F6FBF} .b-ex{background:#2E7D4F} .b-nm{background:#8C959D} .b-fl{background:#9B4F8E}
+  .cell .top{display:flex;align-items:flex-start;justify-content:space-between;gap:2px;min-width:0}
+  .cell .rno{display:flex;align-items:center;font-size:15px;font-weight:700;line-height:1.1;letter-spacing:-.03em;
+             font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cell .code{flex:0 0 auto;min-width:16px;height:16px;padding:0 2px;border-radius:3px;background:rgba(255,255,255,.88);
+              color:var(--ink);font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  /* 2段目：印と状態を1行に */
+  .cell .mid{display:flex;align-items:center;gap:2px;margin-top:auto;overflow:hidden;min-height:14px}
+  .cell .bdg{font-size:8.5px;font-weight:700;border-radius:2px;padding:0 2px;line-height:1.5;flex:0 0 auto;color:#fff}
+  .b-dd{background:#2F6FBF} .b-nm{background:#8C959D} .b-fl{background:#8E4A85} .b-ex{background:#2E7D4F}
+  .b-od{background:#C0392B} .b-rd{background:#4B5A68} .b-w{background:#B86F12} .b-s{background:#A63D2A}
+  .b-ec{background:#23807F} .b-sp{background:#E8823A} .b-wp{background:#2F6FBF} .b-tw{background:#5B4A9E}
+  .b-odk{background:#C0392B}   /* 確認したあとも赤のまま（点滅だけ止める） */
+  .bdg.blink{animation:odBlink 1s ease-in-out infinite}
+  @keyframes odBlink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(192,57,43,.6)}50%{opacity:.35;box-shadow:0 0 0 3px rgba(192,57,43,0)}}
+  @media (prefers-reduced-motion:reduce){.bdg.blink{animation:none}}
+  .gate.od .ackb{display:block;width:100%;margin-top:10px;padding:11px;border-radius:10px;background:#C0392B;color:#fff;font-size:15px;font-weight:700}
+  .gate.od .ackd{display:block;margin-top:8px;font-size:13px;font-weight:600;color:#2E7D4F}
+  /* チェッカー報告の一覧 */
+  .rp{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:var(--hair)}
+  .rp .rb{flex:0 0 auto;min-width:62px;border:0;border-radius:9px;padding:6px 10px;font-size:17px;font-weight:700;
+          font-variant-numeric:tabular-nums;background:var(--fill2);text-align:center}
+  .rp .tx{flex:1;font-size:14.5px;line-height:1.55;padding-top:5px;word-break:break-all}
+  .cell .meta{font-size:10.5px;font-weight:700;line-height:1.3;min-width:0;white-space:nowrap;overflow:hidden;
+              text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .cell .who{font-size:10.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px;opacity:.8}
+  .cell .who.doing{font-weight:800;opacity:1}
+  /* 下の帯：左＝清掃、右＝チェック。作業中は水色、終わると青 */
+  .cell .strip{position:absolute;left:0;right:0;bottom:0;height:6px;display:flex;background:rgba(0,0,0,.08)}
+  .cell .strip .h{flex:1}
+  .cell .strip .h + .h{border-left:2px solid rgba(255,255,255,.75)}
+  .h.doing{background:var(--prog)} .h.done{background:var(--fin)}
 
-  .bar{position:relative;display:flex;align-items:center;gap:4px;height:31px;border-radius:5px;
-       padding:0 4px;overflow:hidden}
-  .bar .h{position:absolute;top:0;bottom:0;width:50%;z-index:0}
-  .bar .h.l{left:0} .bar .h.r{right:0}
-  .h.todo{background:transparent} .h.doing{background:var(--prog)} .h.done{background:var(--fin)}
-  .bar.checked .h{background:var(--chk)}
-  .bar::before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0}
-  .bar::after{content:'';position:absolute;inset:0;border-radius:5px;z-index:3;
-              pointer-events:none;border:0 solid transparent}
-  .bar .code,.bar .meta{position:relative;z-index:2}
-  .cell .who{display:block;font-size:11px;line-height:1.3;color:var(--muted);
-             padding:2px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-             min-height:15px}
-  .cell .who.doing{color:var(--action);font-weight:700}
-  .b-w{background:#C77A15} .b-s{background:#B5442F} .b-ec{background:#3E8E3E}
-  .b-sp{background:#E8823A}
-  /* 追加指示がある部屋：コードの角に赤い丸 */
-  .cell.od .bar .code{box-shadow:0 0 0 2px var(--ng)}
-  .cell.od .bar .code::after{content:'';position:absolute;top:-4px;right:-4px;width:9px;height:9px;border-radius:50%;
-                             background:var(--ng);border:1.5px solid #fff}
-  .bar .code{position:relative}
-  .bar .code{flex:0 0 auto;min-width:22px;height:21px;background:var(--surface);border-radius:3px;
-             display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;padding:0 3px}
-  .bar .meta{font-size:10.5px;font-variant-numeric:tabular-nums;color:#fff;white-space:nowrap;
-             overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 3px rgba(0,0,0,.4)}
-
-  /* 区分の地色 */
-  .k-OUT .bar{background:var(--c-O)} .k-STAY .bar{background:var(--c-S)}
-  .k-D .bar{background:var(--c-D)}
-  .k-D .meta{color:#7A2E3A;text-shadow:none;font-weight:700}
-  .k-FULL .bar{background:var(--c-S);box-shadow:inset 0 0 0 2px #9B4F8E}
-  .k-V .bar{background:var(--c-V)} .k-NONE .bar{background:var(--c-X)}
-  .k-STAY .meta,.k-FULL .meta,.k-V .meta{color:#3A2A2A;text-shadow:none}
+  /* 区分の地色。アウトは アウト前（D）と アウト済（O）で分ける。部屋の詳細の番号にも同じ色を使う */
+  .k-OUT{background:var(--c-O);color:#fff} .k-OUT.pre{background:var(--c-D);color:var(--ink)}
+  .k-STAY{background:var(--c-S)}
+  .k-FULL{background:var(--c-S);box-shadow:inset 0 0 0 3px #8E4A85}
+  .k-V{background:var(--c-V)} .k-NONE{background:var(--c-X)}
+  /* チェックまで終わった部屋はマス全体を緑に */
+  .cell.ckd,.pill.ckd{background:var(--chk);color:#fff;box-shadow:none}
+  .cell.ckd .strip .h{background:rgba(255,255,255,.5)}
 
   /* 締切が近い・過ぎた */
-  .cell.soon .bar::after{border-width:3px;border-color:var(--warn)}
-  .cell.late .bar::after{border-width:3px;border-color:var(--ng);animation:bl 1.1s ease-in-out infinite}
+  .cell::after{content:'';position:absolute;inset:0;border-radius:6px;pointer-events:none;border:0 solid transparent}
+  .cell.soon::after{border-width:3px;border-color:var(--warn)}
+  .cell.late::after{border-width:3px;border-color:var(--ng);animation:bl 1.1s ease-in-out infinite}
   @keyframes bl{0%,100%{opacity:1}50%{opacity:.2}}
-  @media (prefers-reduced-motion:reduce){.cell.late .bar::after{animation:none}}
+  @media (prefers-reduced-motion:reduce){.cell.late::after{animation:none}}
 
-  .cell.skip .rno{opacity:.5}
-  .cell.skip .bar{background:var(--c-X)!important}
-  .cell.skip .h{display:none}
+  /* DD（ステイは基本DD）・清掃不要の部屋はグレー。DDセットの部屋は下の帯だけ残す */
+  .cell.skip{background:var(--c-X);color:#3E4852;box-shadow:none}
+  .cell.skip:not(.ddset) .strip{display:none}
 
   .modebtn{font-size:12.5px;color:var(--action);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
   .modebtn.on{background:var(--action);color:#fff;border-color:var(--action)}
   .modebtn.busy{opacity:.5}
-  #refBtn.hit{background:#2E7D4F;color:#fff;border-color:#2E7D4F}
-  body.pick .cell .rno::before{content:'';width:17px;height:17px;border:2px solid var(--line);
-    border-radius:4px;flex:0 0 auto;margin-right:3px;background:#fff}
-  body.pick .cell.sel .rno::before{background:var(--action);border-color:var(--action);
-    box-shadow:inset 0 0 0 2px #fff}
-  body.pick .cell.sel .bar{outline:2px solid var(--action);outline-offset:1px}
+  /* 選択モード：マスを4列にして大きくし、右上のコードの四角をチェック欄にする（部屋番号が切れないように） */
+  body.pick .cells{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+  @media(min-width:560px){body.pick .cells{grid-template-columns:repeat(6,minmax(0,1fr))}}
+  body.pick .cell{height:70px}
+  body.pick .cell .rno{font-size:17px}
+  body.pick .cell .code{width:22px;height:22px;min-width:22px;padding:0;font-size:0;border-radius:6px;
+    background:#fff;box-shadow:inset 0 0 0 2px rgba(0,0,0,.3)}
+  body.pick .cell.sel .code{background:var(--action);box-shadow:none}
+  body.pick .cell.sel .code::after{content:'✓';font-size:15px;font-weight:800;color:#fff;line-height:1}
+  body.pick .cell.sel{outline:3px solid var(--action);outline-offset:1px}
+  /* 選択モードの間は、上の件数・指示などを隠して、部屋の見える所を広くする（階ジャンプと「選択をやめる」は残す） */
+  body.pick .csub, body.pick .meter, body.pick .quick, body.pick .mywork{display:none}
 
   .actionbar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface);
     border-top:1px solid var(--line);padding:11px 12px calc(11px + env(safe-area-inset-bottom));
     transform:translateY(120%);transition:transform .2s}
   .actionbar.on{transform:none}
   .actionbar .n{font-size:13px;color:var(--muted);margin-bottom:8px}
-  .actionbar .g{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+  /* 下の板は低くする：ボタンは3列にまとめる（選んだ部屋に合うものだけ出る）。「選択をやめる」は上の帯にある */
+  .actionbar{max-height:45vh;overflow-y:auto;overscroll-behavior:contain;padding-top:9px}
+  .actionbar .n{margin-bottom:6px}
+  .actionbar .abgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:6px}
+  .actionbar .abgrid .g{display:contents}
+  .actionbar .abgrid button{padding:10px 4px;font-size:13px;line-height:1.25}
+  .actionbar button.ecb{background:#23807F;color:#fff}
+  .actionbar .ab-due{display:flex;gap:6px}
+  .actionbar .ab-due input[type=time]{flex:1 1 auto;margin-top:0;min-width:0;padding:9px}
+  .actionbar .ab-due button{flex:0 0 auto;padding:9px 14px;font-size:13px}
+  .actionbar .ab-stop{display:none}
   .actionbar button{padding:12px 6px;border-radius:8px;font-size:14px;font-weight:600;
     border:1px solid var(--line);background:var(--surface)}
   .actionbar button.out{background:var(--c-O);color:#fff;border-color:var(--c-O)}
@@ -277,6 +315,9 @@
   .site .tog.on{background:#2F6FBF}
   .site .tog.on.gry{background:#8C959D}
   .site .tog.on.sp{background:#2E7D4F}
+  .site .tog.on.ecg{background:#23807F}
+  .site .tog.on.fullg{background:#8E4A85}
+  .site .rptl{margin-top:12px;font-size:13px;font-weight:700;color:var(--muted)}
   .site .ago{display:block;font-size:11.5px;color:var(--muted);margin-top:1px}
   .site .ago.old{color:var(--warn);font-weight:600}
   .site .ago.done{color:var(--chk);font-weight:600}
@@ -351,18 +392,9 @@
   .langs button{background:var(--fill2)}
   .mywork .wk{background:rgba(0,122,255,.1);color:var(--action)}
 
-  /* 階ごとのカード：角丸の白い面を浮かせる */
-  .rack{margin:10px 8px 0;border:0;border-radius:18px;background:var(--surface);box-shadow:var(--lift);overflow:hidden}
-  .flr{border-bottom:0}
-  .flr .lbl{flex:0 0 30px;border-right:0;background:var(--fill2);color:var(--ink);font-size:15px;font-weight:700}
-  .cells{gap:11px 6px;padding:11px 7px 12px}
-  .cell .rno{font-size:17px;font-weight:600;letter-spacing:-.015em}
-  .bar{height:30px;border-radius:8px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06)}
-  .bar::after{border-radius:8px}
-  .bar .code{height:20px;border-radius:5px;box-shadow:0 .5px 1.5px rgba(0,0,0,.14)}
-  .cell .bdg{border-radius:4px}
-  body.pick .cell.sel .bar{outline-color:var(--action)}
-  body.pick .cell.sel .rno::before{background:var(--action);border-color:var(--action)}
+  /* 階ごとのカード：角丸の面を浮かせる。階の見出しは紺、マスは状態の色（御堂筋と同じ色合い） */
+  .rack{margin:10px 8px 0;border:0;border-radius:14px;background:var(--surface);box-shadow:var(--lift);overflow:hidden}
+  body.pick .cell.sel{outline-color:var(--action)}
 
   /* まとめて操作のバー：すりガラスの板 */
   .actionbar{background:rgba(249,249,251,.88);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);
@@ -438,7 +470,9 @@
   <!-- よく使うもの：指示・回収（数が出る）、送れていない操作 -->
   <div class="quick">
     <button class="qchip" onclick="openOrd()"><span data-t="ordBtn">指示</span><span class="n" id="ordN" hidden></span></button>
-    <button class="qchip" onclick="openCollect()"><span data-t="collect">回収</span><span class="n" id="colN" hidden></span></button>
+    <button class="qchip" onclick="openEarly()"><span data-t="eBtn">早仕上げ</span><span class="n" id="earlyN" hidden></span></button>
+    <button class="qchip" onclick="openRpt()"><span data-t="rptBtn">報告</span><span class="n" id="rptN" hidden></span></button>
+    <button class="qchip" id="mineBtn" onclick="toggleMine()"><span id="mineLbl"></span></button>
     <span class="qrow" id="qRow" hidden>
       <button class="qpill" id="qPill" onclick="flushNow()" hidden></button>
       <button class="qpill bad" id="qDrop" onclick="showDropped()" hidden></button>
@@ -466,9 +500,6 @@
     <button class="dbtn" onclick="toggleMenu(false); openOrd()">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6M9 4a2 2 0 0 0-2 2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-1a2 2 0 0 0-2-2"/><path d="M8 12h8M8 16h5"/></svg>
       <span data-t="ordBtn">指示</span></button>
-    <button class="dbtn" onclick="toggleMenu(false); openCollect()">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
-      <span data-t="collect">回収</span></button>
     <button class="dbtn" onclick="toggleMenu(false); load(true)">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
       <span data-t="refresh">更新</span></button>
@@ -502,17 +533,20 @@
 
 <div class="actionbar" id="abar">
   <div class="n" id="abarN"></div>
-  <div class="g">
+  <!-- 選んだ部屋に合うボタンだけ出す（アウトの部屋→アウト済/前、ステイ・フル→DD・清掃不要、清掃する部屋→締切） -->
+  <div class="abgrid">
+  <div class="g" id="abOutRow">
     <button class="out" data-t="setO" onclick="bulkCode('O')">アウト済にする</button>
     <button data-t="setD" onclick="bulkCode('D')">アウト前に戻す</button>
-    <button class="pri" data-t="ddOn" onclick="bulkFlag({dd:true})">DD設置</button>
-    <button data-t="ddOff" onclick="bulkFlag({dd:false})">DD解除</button>
-    <button class="gry" data-t="skipOn" onclick="bulkFlag({skip:true})">清掃不要</button>
-    <button data-t="skipOff" onclick="bulkFlag({skip:false})">清掃不要 解除</button>
   </div>
-  <input type="time" id="bulkTime" aria-label="deadline">
-  <button style="width:100%;margin-top:7px" data-t="setDue" onclick="bulkDue()">締切を入れる</button>
-  <button style="width:100%;margin-top:7px" data-t="stopPick" onclick="togglePick()">選択をやめる</button>
+  <div class="g" id="abDdRow">
+    <!-- ステイは基本DDなので、DD設置・DD解除・清掃不要のまとめてのボタンは無し（ユーザー判断）。
+         まとめて EC清掃だけ（エコ清掃に変わった部屋をまとめて清掃に入れる）。清掃不要は部屋の詳細から1部屋ずつ -->
+    <button class="ecb" data-t="ecOn" onclick="bulkFlag({ec:true})">EC清掃にする</button>
+  </div>
+  </div>
+  <!-- 締切はまとめて入れない（早インは管理画面の追加指示で入れる。イン時刻・締切・早仕上げの一覧までそろう） -->
+  <button class="ab-stop" data-t="stopPick" onclick="togglePick()">選択をやめる</button>
 </div>
 
 <div class="veil" id="veil" onclick="closeSheet()"></div>
@@ -523,11 +557,13 @@
   <div id="dGate"></div>
   <div class="site">
     <h3 data-t="rec">記録</h3>
-    <div class="r"><label data-t="ddSet">DD（ドア前セット）</label><div class="tog" id="tgDD" onclick="flip('dd')"></div></div>
+    <div class="r" id="rDD"><label data-t="ddSet">DD（ドア前セット）</label><div class="tog" id="tgDD" onclick="flip('dd')"></div></div>
     <div class="r" id="rSupply"><label data-t="supply">備品</label>
       <select id="fSupply" onchange="saveField('supply', this.value)">
         <option value="要">要</option><option value="不要">不要</option></select></div>
-    <div class="r"><label data-t="g_skip">清掃不要</label><div class="tog gry" id="tgSkip" onclick="flip('skip')"></div></div>
+    <div class="r" id="rEc"><label data-t="ec">EC清掃（エコ清掃）</label><div class="tog ecg" id="tgEc" onclick="flip('ec')"></div></div>
+    <div class="r" id="rFull"><label data-t="fullMk">フルメイク（リネン強制交換）</label><div class="tog fullg" id="tgFull" onclick="flip('full')"></div></div>
+    <div class="r" id="rSkip"><label data-t="g_skip">清掃不要</label><div class="tog gry" id="tgSkip" onclick="flip('skip')"></div></div>
     <div class="r"><label><span data-t="pickup">ゴミ箱回収</span><small id="byPick" class="ago"></small></label>
       <div class="tog" id="tgPick" onclick="flip('pickup')"></div></div>
     <div class="r"><label><span data-t="bag">使用済みバッグ回収</span><small id="byBag" class="ago"></small></label>
@@ -543,6 +579,10 @@
         <option value="">—</option><option>ON</option><option>OFF</option></select></div>
     <input type="text" class="memo" id="fMemo" data-t="memoPh"
            placeholder="忘れ物・言われたこと など" onchange="saveField('memo', this.value)">
+    <!-- チェッカー報告は日報の備考に載る（現場メモはフロアレポートの備考だけ）。御堂筋と同じ -->
+    <div class="rptl" data-t="rpt">チェッカー報告（フロントに伝えること・日報に載る）</div>
+    <input type="text" class="memo" id="fReport" data-t="rptPh"
+           placeholder="香水臭・故障など" onchange="saveField('report', this.value)">
   </div>
   <div class="site" id="spBox">
     <h3 data-t="sp">特別清掃</h3>
@@ -560,14 +600,23 @@
   <button class="btn close" data-t="close" onclick="closeSheet()">閉じる</button>
 </div>
 
-<div class="veil" id="cveil" onclick="closeCollect()"></div>
-<div class="sheet" id="csheet" role="dialog" aria-modal="true">
+
+<div class="veil" id="eveil" onclick="closeEarly()"></div>
+<div class="sheet" id="esheet" role="dialog" aria-modal="true">
   <div class="grab"></div>
-  <h2 style="font-size:22px"><span data-t="collectTitle">回収の確認</span></h2>
-  <p style="font-size:13px;color:var(--muted);margin:4px 0 12px" data-t="collectHint">
-    ゴミ・リネンを回収した部屋です。確かめたら「確認」を押してください。</p>
-  <div id="clist"></div>
-  <button class="btn close" data-t="close" onclick="closeCollect()">閉じる</button>
+  <h2 style="font-size:22px"><span data-t="eTitle">早仕上げの状況</span></h2>
+  <p style="font-size:13px;color:var(--muted);margin:4px 0 10px" data-t="eHint">アーリーインの部屋だけ。イン時刻の早い順。部屋番号を押すとその部屋を開きます。</p>
+  <div id="elist"></div>
+  <button class="btn close" data-t="close" onclick="closeEarly()">閉じる</button>
+</div>
+
+<div class="veil" id="rveil" onclick="closeRpt()"></div>
+<div class="sheet" id="rsheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h2 style="font-size:22px"><span data-t="rptTitle">チェッカー報告</span></h2>
+  <p style="font-size:13px;color:var(--muted);margin:4px 0 10px" data-t="rptHint">チェッカー報告が入っている部屋。部屋番号を押すとその部屋を開きます。</p>
+  <div id="rlist"></div>
+  <button class="btn close" data-t="close" onclick="closeRpt()">閉じる</button>
 </div>
 
 <div class="veil" id="oveil" onclick="closeOrd()"></div>
@@ -585,6 +634,24 @@
 /* Lang.html が古いままでも、新しく足した言葉が「enterAs」のような名前で出ないようにする（日本語で補う） */
 (function(){
   const add = {
+    ecOn:'EC清掃にする',
+    ackBtn:'内容を確認しました（{n}）', ackBy:'確認：{n}',
+    ackAsk:'{r} に指示が追加になっています。\n\n{o}\n\n内容を確認しましたか？',
+    rptBtn:'報告', rptTitle:'チェッカー報告', rptHint:'チェッカー報告が入っている部屋。部屋番号を押すとその部屋を開きます。', rptNone:'報告はまだありません',
+    fullMk:'フルメイク（リネン強制交換）', cfFullOn:'{r} をフルメイクにします。DD・EC清掃が外れて、フルメイク（リネン強制交換）として清掃に入ります。よろしいですか？',
+    cfFullOff:'{r} のフルメイクを外します。ステイに戻ります（EC清掃でなければDD）。よろしいですか？',
+    cfSpOn:'{r}「{w}」を清掃済にします。よろしいですか？', cfSpOff:'{r}「{w}」の清掃済を取り消します。よろしいですか？',
+    eBtn:'早仕上げ', eTitle:'早仕上げの状況', eHint:'アーリーインの部屋だけ。イン時刻の早い順。部屋番号を押すとその部屋を開きます。',
+    eIn:'{t}イン', eNone:'今日の早仕上げはありません',
+    est_todo:'未完了', est_doing:'清掃中', est_done:'清掃完了', est_ckd:'チェック済',
+    mineOff:'自分の階だけ', mineOn:'自分の階 {f}', mineNone:'先に階の見出し（左の紺の欄）を押して、担当の階を選んでください',
+    ec:'EC清掃（エコ清掃）', cfEcOn:'{r} をEC清掃にします。DDが外れて清掃に入る部屋になります。',
+    cfEcOff:'{r} のEC清掃を外します。DDに戻ります。', cfEcOffF:'{r} のEC清掃を外します。フルメイクに戻ります。',
+    ddHow:'ステイは基本DDです。ドア前にセットしたら「セット済」。エコ清掃に変わったら下の「EC清掃」を押してください。',
+    rpt:'チェッカー報告（フロントに伝えること・日報に載る）', rptPh:'香水臭・故障など',
+    cfTeamOn:'{f} の担当にします', cfTeamOff:'{f} の担当を外します', teamTap:'押すと担当',
+    again:'もう一度清掃（次のお客様）', cfAgain:'{r} の今の清掃とチェックの記録を残して、もう一度清掃できるようにします。', round:'{n}回目',
+    againUndo:'もう一度清掃を取り消す（前の回に戻す）', cfAgainUndo:'{r} を前の回の記録（清掃・チェック済み）に戻します。',
     enterAs:'{n}で入室', exitAs:'{n}で退出', working:'作業中', order:'追加の指示',
     ddSetBtn:'セット済', ddOkBtn:'確認済', ordBtn:'指示', ordTitle:'今日の指示',
     oEarly:'アーリーイン', oIn:'{t} イン（{d} までに仕上げ）', oOut:'{t} アウト', oNext:'翌日回し（今日は清掃しない）',
@@ -689,8 +756,10 @@ function render(b){
   updateCounts();
   $('empty').hidden = b.rooms.length > 0;
   if (same) b.rooms.forEach(paintRoom); else buildRack(b.rooms);
+  paintTeams(); applyMine();
+  if (EOPEN) drawEarly();
+  if (RPOPEN) drawRpt();
   if (ORDOPEN) drawOrd();
-  if (COLOPEN) drawCollect();
 }
 
 function syncStaff(list){
@@ -766,11 +835,13 @@ function updateCounts(){
   $('bar1').style.width = c.total ? (c.checked/c.total*100)+'%' : '0';
   $('bar2').style.width = c.total ? ((c.done-c.checked)/c.total*100)+'%' : '0';
   // 回収したのにチェッカーがまだ確認していない部屋の数
-  const n = BOARD.rooms.filter(r => (r.pickup || r.bag) && !r.collectOk).length;
-  $('colN').hidden = !n; $('colN').textContent = n;
   // 業務中の追加指示が入っている部屋の数
-  const o = BOARD.rooms.filter(r => r.order).length;
+  const e = earlyRooms().filter(r => r.clean.state !== 'done').length;
+  $('earlyN').hidden = !e; $('earlyN').textContent = e;
+  const o = BOARD.rooms.filter(r => r.order && !r.orderAck).length;   // まだ確かめていない追加指示の数
   $('ordN').hidden = !o; $('ordN').textContent = o;
+  const rp = BOARD.rooms.filter(r => r.report).length;
+  $('rptN').hidden = !rp; $('rptN').textContent = rp;
   drawMyWork();
 }
 
@@ -795,12 +866,127 @@ function buildRack(rooms){
     g.list.push(r);
   });
   floors.sort((a,b)=>parseInt(b.name,10)-parseInt(a.name,10));   // 上の階から
+  // 階の見出しを押すと、自分がその階の担当になる／外れる（御堂筋と同じ）
   $('rack').innerHTML = floors.map(g=>
-    '<div class="rack" id="f-'+esc(g.name)+'"><div class="flr"><div class="lbl">'+esc(g.name)+'</div>'
+    '<div class="rack" id="f-'+esc(g.name)+'"><div class="flr"><button class="lbl" onclick="toggleTeam(\''+esc(g.name)+'\')">'
+    + esc(g.name)+'<span id="tm-'+esc(g.name)+'"></span></button>'
     + '<div class="cells">' + g.list.map(cell).join('') + '</div></div></div>').join('');
   $('floors').innerHTML = floors.map(g => '<button class="fchip" onclick="jumpFloor(\'' + esc(g.name) + '\', this)">'
     + esc(g.name) + '</button>').join('');
   measureHeader();
+}
+
+/* ---------- 担当階（清掃員が自分で選ぶ。目印だけで、ほかの人も入れる。御堂筋と同じ） ---------- */
+function paintTeams(){
+  const team = BOARD.team || {};
+  document.querySelectorAll('[id^="tm-"]').forEach(el => {
+    const f = el.id.slice(3), names = team[f] || [];
+    const html = names.length
+      ? names.map(n => '<span class="tm'+(n === me() ? ' mine' : '')+'">'+esc(shortName(n))+'</span>').join('')
+      : '<span class="tm none" title="'+esc(t('teamTap'))+'">＋</span>';
+    if (el.dataset.h !== html){ el.innerHTML = html; el.dataset.h = html; }
+  });
+}
+function toggleTeam(floor){
+  if (PICK) return;
+  if (!needName()) return;
+  const on = ((BOARD.team || {})[floor] || []).indexOf(me()) < 0;
+  if (!confirm(t(on ? 'cfTeamOn' : 'cfTeamOff', {f: floor}))) return;
+  try {
+    google.script.run
+      .withSuccessHandler(r => { BOARD.team = r.team; adoptRev(r.__rev); paintTeams(); applyMine(); })
+      .withFailureHandler(e => { toast(e.message || t('failed')); })
+      .setFloorTeam(floor, me(), on);
+  } catch (err) { toast(t('failed') + '（画面を開き直してください）'); }
+}
+
+/* ---------- 自分の担当階だけ表示（ほかの階の部屋を押し間違えないように）。もう一度押すと全部の階 ---------- */
+let MINE = (() => { try { return localStorage.getItem('mineOnly') === '1'; } catch (e) { return false; } })();
+function myFloors(){
+  const team = BOARD.team || {}, nm = me();
+  return nm ? Object.keys(team).filter(f => (team[f] || []).indexOf(nm) >= 0) : [];
+}
+function applyMine(){
+  const mine = myFloors(), on = MINE && mine.length > 0;
+  document.querySelectorAll('#rack .rack').forEach(el => { el.hidden = on && mine.indexOf(el.id.slice(2)) < 0; });
+  document.querySelectorAll('#floors .fchip').forEach(el => { el.hidden = on && mine.indexOf(el.textContent.trim()) < 0; });
+  $('mineBtn').classList.toggle('on', on);
+  $('mineLbl').textContent = on ? t('mineOn', {f: mine.sort((a, b) => parseInt(b, 10) - parseInt(a, 10)).join('・')}) : t('mineOff');
+  measureHeader();
+}
+function toggleMine(){
+  if (!MINE && !myFloors().length) {
+    // 担当の階がまだ無い：階の見出しを押して担当を選んでもらう
+    toast(me() ? t('mineNone') : t('pickName'));
+    if (!me()) $('staff').focus();
+    return;
+  }
+  MINE = !MINE;
+  try { localStorage.setItem('mineOnly', MINE ? '1' : ''); } catch (e) {}
+  applyMine();
+  window.scrollTo({ top: 0 });
+}
+
+/* ---------- 追加指示を確かめた（タイルの「!」の点滅を止める） ---------- */
+function ackOrder(){
+  if (!CUR || !CUR.order || CUR.orderAck) return;
+  if (!needName()) return;
+  const room = CUR.room, before = JSON.parse(JSON.stringify(CUR));
+  const op = { kind: 'ack', room: room, staff: me(), at: srvNow() };
+  const i = BOARD.rooms.map(x => x.room).indexOf(room);
+  if (i >= 0) { BOARD.rooms[i].orderAck = me() + ' ' + nowHM(); CUR = BOARD.rooms[i]; }
+  updateCounts(); paint(room); fillSheet(CUR);
+  if (OUTBOX.length) { enqueue(op); return; }
+  send(op, false,
+    f => { if (f) { adoptRev(f.__rev); applyOne_(room, f); } },
+    e => { if (isNetErr(e)) { enqueue(op); toast(t('qSaved')); return; }
+      applyOne_(room, before); toast(e.message || t('failed')); });
+}
+
+/* ---------- チェッカー報告の一覧（各部屋の報告をまとめて見る） ---------- */
+let RPOPEN = false;
+function openRpt(){ RPOPEN = true; drawRpt(); $('rveil').classList.add('on'); $('rsheet').classList.add('on'); }
+function closeRpt(){ RPOPEN = false; $('rveil').classList.remove('on'); $('rsheet').classList.remove('on'); }
+function drawRpt(){
+  const list = BOARD.rooms.filter(r => r.report).sort((a, b) => cmpNo(a.room, b.room));
+  $('rlist').innerHTML = list.length ? list.map(r =>
+    '<div class="rp"><button class="rb" onclick="closeRpt();openSheet(\'' + esc(r.room) + '\')">' + esc(r.room) + '</button>'
+    + '<span class="tx">' + esc(r.report) + '</span></div>').join('')
+    : '<p class="empty" style="padding:24px">' + esc(t('rptNone')) + '</p>';
+}
+
+/* ---------- 早仕上げ（アーリーイン）の部屋の清掃状況。指示の一覧とは別に、状況だけを並べる ---------- */
+let EOPEN = false;
+function earlyRooms(){
+  return BOARD.rooms.filter(r => r.checkIn && isTarget(r) && !r.dd)
+    .sort((a, b) => (a.checkIn + a.room).localeCompare(b.checkIn + b.room, 'en', { numeric: true }));
+}
+function earlyState(r){
+  return r.check.state === 'done' ? 'ckd' : r.clean.state === 'done' ? 'done' : r.clean.state === 'doing' ? 'doing' : 'todo';
+}
+/** 「11:00」→「11時」、「11:30」→「11時30分」 */
+function hourJa(hm){
+  const m = String(hm || '').match(/^(\d{2}):(\d{2})$/);
+  if (!m) return hm || '';
+  return LANG === 'ja' ? (+m[1]) + '時' + (m[2] !== '00' ? (+m[2]) + '分' : '') : hm;
+}
+function openEarly(){
+  EOPEN = true; drawEarly();
+  $('eveil').classList.add('on'); $('esheet').classList.add('on');
+}
+function closeEarly(){ EOPEN = false; $('eveil').classList.remove('on'); $('esheet').classList.remove('on'); }
+function drawEarly(){
+  const list = earlyRooms();
+  $('elist').innerHTML = list.length ? list.map(r => {
+    const st = earlyState(r), m = minsUntil(r.dueIn);
+    const late = st === 'todo' || st === 'doing' ? (m !== null && m < 0) : false;
+    return '<div class="er' + (late ? ' late' : '') + '">'
+      + '<button class="rb" onclick="closeEarly();openSheet(\'' + esc(r.room) + '\')">' + esc(r.room) + '</button>'
+      + '<span class="st ' + st + '">' + esc(t('est_' + st)) + '</span>'
+      + '<span class="tm">' + esc(t('eIn', {t: hourJa(r.checkIn)}))
+      + (r.dueIn && (st === 'todo' || st === 'doing') ? '<small>' + esc(m !== null && m < 0 ? t('dueOver', {n: Math.abs(m)}) : t('due', {t: r.dueIn})) + '</small>' : '')
+      + '</span></div>';
+  }).join('') : '<p class="empty" style="padding:24px">' + esc(t('eNone')) + '</p>';
 }
 
 /** 階ジャンプ：ヘッダーの下にその階が来るようにする */
@@ -836,9 +1022,10 @@ function paint(room){
 function isW(r){ return ['新規','継続','常設'].indexOf(r.dmake) >= 0; }
 
 function sigOf(r){
-  return [r.kbn, r.code, r.clean.state, r.check.state, r.clean.minutes, r.dueIn, r.clean.staff,
-          r.dmake, r.eco?1:0, spLeft(r), r.order ? 1 : 0,
-          r.dd?1:0, r.skip?1:0, r.noMake?1:0, r.fullClean?1:0, hasSp(r)?1:0,
+  return [r.kbn, r.code, r.clean.state, r.check.state, r.clean.minutes, r.dueIn, r.clean.staff, r.check.staff,
+          r.dmake, r.ec?1:0, spLeft(r), r.order ? 1 : 0, r.round,
+          r.dd?1:0, r.skip?1:0, r.supply, r.noMake?1:0, r.fullClean?1:0, hasSp(r)?1:0, r.orderAck, r.twin?1:0,
+          r.pickup?1:0, r.bag?1:0, r.pickupBy, r.bagBy, r.collectOk,
           gate(r), SEL.has(r.room)?1:0].join('|');
 }
 
@@ -850,15 +1037,20 @@ function spLeft(r){
   return (r.spTodo || []).filter((p, i) => p && !r[SP_KEYS[i]]).length;
 }
 
-/** 地色のクラス。区分で分ける */
-function colorOf(r){
-  if (r.kbn === 'OUT' && r.code === 'D') return 'k-D';
-  return 'k-' + (r.kbn || 'NONE');
-}
+/** 清掃する区分（アウト・ステイ・フル）か。空室・対象外は締切（アーリーイン）を出さない */
+function isTarget(r){ return ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0; }
+/** DD でセットが要る部屋（DDセット・DDチェックを押す。清掃の数には入らない） */
+function ddSet(r){ return r.dd && r.supply !== '不要'; }
+/** アウトの部屋で、まだアウト済（O）になっていない */
+function isPre(r){ return r.kbn === 'OUT' && String(r.code).toUpperCase() !== 'O'; }
 
-/** 状態: skip / late / soon / '' */
+/** 地色のクラス。区分で分け、アウトはアウト前を別の色にする（御堂筋と同じ） */
+function colorOf(r){ return 'k-' + (r.kbn || 'NONE') + (isPre(r) ? ' pre' : ''); }
+
+/** 状態: skip / late / soon / ''。DD（ステイは基本DD）・清掃不要はグレー */
 function gate(r){
-  if (r.skip) return 'skip';
+  if (r.skip || r.dd) return 'skip';
+  if (!isTarget(r)) return '';               // 空室・対象外はアーリーインがあっても数えない
   if (r.clean.state === 'done') return '';
   const m = minsUntil(r.dueIn);
   if (m === null) return '';
@@ -872,42 +1064,60 @@ function cell(r){
   const done = r.clean.state === 'done';
   const ckd  = r.check.state === 'done';
   const m = minsUntil(r.dueIn);
+  const pre = isPre(r);
 
-  const meta = r.skip ? t('skipTile')
-    : ckd  ? t('check') + ' ' + r.check.finish
+  // タイルは幅が狭いので、記号と数字だけの短い表示にする（詳しくは部屋を開くと出る）
+  const meta = r.skip && !r.dd ? t('skipTile')
+    : r.dd ? (ckd ? 'DD ✓✓' : done ? 'DD ✓' : 'DD')
+    : ckd  ? '✓' + r.check.finish
+    : r.check.state === 'doing' ? '▶ ' + r.check.start
     : done ? (r.clean.minutes||0) + t('min')
-    : g === 'late' ? t('dueOver', {n: Math.abs(m)})
-    : g === 'soon' ? t('dueLeft', {n: m})
-    : r.dueIn ? t('due', {t: r.dueIn})
-    : (r.kbn === 'OUT' && r.code === 'D' && r.clean.state === 'todo') ? t('outBefore') : '';
+    : r.clean.state === 'doing' ? '▶ ' + r.clean.start
+    : g === 'late' ? '!' + Math.abs(m) + t('min')
+    : g === 'soon' ? '⏱' + m + t('min')
+    : (isTarget(r) && r.checkIn) ? 'IN' + r.checkIn          // 早イン：イン時刻を出す（締切が近づくと上の ⏱・! に変わる）
+    : (isTarget(r) && r.dueIn) ? '〜' + r.dueIn
+    : '';   // アウト前・アウト済はマスの色でわかるので文字は出さない
 
-  const bdg = (r.dd ? '<span class="bdg b-dd">DD</span>' : '')
+  // DD はマスがグレーで下に「DD」と出るのでバッジは付けない
+  // 追加指示：まだ誰も確かめていなければ赤く点滅、確かめたら点滅だけ止めて赤い「!」のまま
+  const bdg = (r.order ? '<span class="bdg ' + (r.orderAck ? 'b-odk' : 'b-od blink') + '">!</span>' : '')
+    + (r.round > 1 ? '<span class="bdg b-rd">'+esc(t('round', {n: r.round}))+'</span>' : '')
+    + (r.twin ? '<span class="bdg b-tw">TW</span>' : '')   // ツイン（1209・1211 は常に）
+    + (isW(r) ? '<span class="bdg b-w">W</span>' : '')
+    + (r.dmake === '解除' ? '<span class="bdg b-s">W→S</span>' : '')
+    // 古い保存の「増設解除して増設予定」（＝ピンクの増設セット解除）もシングルに戻す部屋として出す
+    + (r.dmake === '増設解除して増設予定' ? '<span class="bdg b-s">W→S</span>' : '')
+    + (r.ec ? '<span class="bdg b-ec">EC</span>' : '')
     + (r.noMake ? '<span class="bdg b-nm">NM</span>' : '')
     + (r.fullClean ? '<span class="bdg b-fl">フル</span>' : '')
-    + (isW(r) ? '<span class="bdg b-w">W</span>' : '')
-    + (r.dmake === '解除' ? '<span class="bdg b-s">S</span>' : '')
-    + (r.eco ? '<span class="bdg b-ec">EC</span>' : '')
     + (hasSp(r) ? '<span class="bdg b-ex">特</span>' : '')
-    + (spLeft(r) ? '<span class="bdg b-sp">特' + spLeft(r) + '</span>' : '');
+    ;   // 特別清掃の残り（特N）はタイルに出さない。部屋を押すと詳細に「今月まだ」で出る
 
-  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':'', r.order?'od':''].filter(Boolean).join(' ');
-  const mark = r.kbn === 'OUT' ? (r.code === 'D' ? 'D' : 'O')
-             : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : 'S';
+  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':'', ddSet(r)?'ddset':'', (ckd && !r.dd) ? 'ckd' : ''].filter(Boolean).join(' ');
+  const mark = r.kbn === 'OUT' ? (pre ? 'D' : 'O')
+    : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : r.kbn === 'STAY' ? 'S' : '−';
 
-  // 清掃に入った人の名前。入室した時点から出して、退出後・チェック後も残す
-  const who = r.clean.staff ? shortName(r.clean.staff) : '';
-  const whoCls = r.clean.state === 'doing' ? 'who doing' : 'who';
+  // 名前：チェック中はチェッカー、それ以外は清掃に入った人。退出後・チェック後も残す
+  // 清掃に入っていない部屋（DDなど）で回収だけした場合は、回収した人の名前を出す
+  // ゴミ回収は 🗑、使用済みバッグ（タオル・リネン）回収は 🧺、チェッカーが確認したら ✓（御堂筋と同じ）
+  const checking = r.check.state === 'doing';
+  const name = checking ? r.check.staff : (r.clean.staff || byName(r.pickupBy) || byName(r.bagBy));
+  const icons = (r.pickup ? '🗑' : '') + (r.bag ? '🧺' : '');   // 回収の確認は無し（数だけ日報に出す）
+  const who = (icons ? icons + ' ' : '') + (name ? shortName(name) : '');
+  const whoCls = (r.clean.state === 'doing' || checking) ? 'who doing' : 'who';
 
   return '<button id="c-'+esc(r.room)+'" data-sig="'+esc(sigOf(r))+'" class="cell '+cls+'" '
     + 'onclick="tap(\''+esc(r.room)+'\')">'
-    + '<span class="rno">'+esc(r.room)+bdg+'<span class="sp"></span></span>'
-    + '<span class="bar'+(ckd?' checked':'')+'">'
-    +   '<span class="h l '+r.clean.state+'"></span><span class="h r '+r.check.state+'"></span>'
-    +   '<span class="code">'+mark+'</span><span class="meta">'+esc(meta)+'</span>'
-    + '</span>'
+    + '<span class="top"><span class="rno">'+esc(r.room)+'</span><span class="code">'+mark+'</span></span>'
+    + '<span class="mid">'+bdg+'<span class="meta">'+esc(meta)+'</span></span>'
     + '<span class="'+whoCls+'">'+esc(who)+'</span>'
+    + '<span class="strip"><i class="h '+r.clean.state+'"></i><i class="h '+r.check.state+'"></i></span>'
     + '</button>';
 }
+
+/** 「山田 太郎 10:32」から名前だけ取り出す */
+function byName(s){ return String(s || '').replace(/\s*\d{1,2}:\d{2}$/, '').trim(); }
 
 /** タイルに収まるよう苗字だけにする。区切りが無ければ先頭4文字 */
 function shortName(n){
@@ -928,9 +1138,18 @@ function togglePick(on){
   $('pband').hidden = !PICK; measureHeader();
   BOARD.rooms.forEach(paintRoom); syncBar();
 }
+/** 選んだ部屋に合うボタンだけ出す。下の板が出ているあいだは、その高さぶんページの下に余白を足す
+ *  （前は全部のボタンが出て画面の半分をふさぎ、下の階の部屋が押せなかった） */
 function syncBar(){
-  $('abar').classList.toggle('on', PICK && SEL.size > 0);
+  const on = PICK && SEL.size > 0;
+  $('abar').classList.toggle('on', on);
   $('abarN').textContent = t('selN', {n: SEL.size});
+  const sel = Array.from(SEL).map(no => BOARD.rooms.filter(x => x.room === no)[0]).filter(Boolean);
+  $('abOutRow').style.display  = sel.some(r => r.kbn === 'OUT') ? '' : 'none';
+  $('abDdRow').style.display   = sel.some(r => r.kbn === 'STAY' || r.kbn === 'FULL') ? '' : 'none';
+  requestAnimationFrame(() => {
+    document.body.style.paddingBottom = $('abar').classList.contains('on') ? ($('abar').offsetHeight + 16) + 'px' : '';
+  });
 }
 
 function bulkCode(code){
@@ -969,14 +1188,19 @@ function sendBulk(op){
 function bulkFlag(patch){
   if (!SEL.size || busy) return;
   if (!needName()) return;
-  const rooms = Array.from(SEL);
-  const word = ('dd' in patch) ? (patch.dd ? t('ddOn') : t('ddOff'))
+  // DD・清掃不要はステイ・フルの部屋だけ（アウトや空室を一緒に選んでいても、そこは変えない）
+  const rooms = Array.from(SEL).filter(no => { const r = BOARD.rooms.filter(x => x.room === no)[0]; return r && (r.kbn === 'STAY' || r.kbn === 'FULL'); });
+  if (!rooms.length) return;
+  const word = ('ec' in patch) ? t('ecOn')
+             : ('dd' in patch) ? (patch.dd ? t('ddOn') : t('ddOff'))
                                : (patch.skip ? t('skipOn') : t('skipOff'));
   if (!confirm(t('cfBulk', {n: rooms.length, w: word}))) return;
 
   // 1部屋ずつのときと同じく、清掃不要にしたらDDも立てる（日報の未清掃数＝DD数）
   const send = Object.assign({}, patch);
-  if (send.skip === true) send.dd = true;
+  if (send.skip === true) { send.dd = true; send.ec = false; }
+  if (send.dd === true) send.ec = false;   // DD と EC清掃は両立しない
+  if (send.ec === true) { send.dd = false; send.skip = false; }   // EC清掃にしたら DD・清掃不要を外して清掃に入る
 
   // 返事を待たずにタイルを先に変える。179室の読み直しを待つと効いていないように見えるため
   rooms.forEach(room => {
@@ -990,20 +1214,6 @@ function bulkFlag(patch){
   sendBulk({ kind: 'flags', rooms: rooms, patch: send, at: srvNow() });
 }
 
-function bulkDue(){
-  if (!SEL.size || busy) return;
-  if (!needName()) return;
-  const tm = $('bulkTime').value;
-  const rooms = Array.from(SEL);
-  if (!confirm(t('cfBulk', {n: rooms.length, w: (tm || '—')}))) return;
-  rooms.forEach(room => {
-    const i = BOARD.rooms.map(x=>x.room).indexOf(room);
-    if (i >= 0) BOARD.rooms[i].dueIn = tm;
-  });
-  rooms.forEach(paint);
-  toast(t('setDue'));
-  sendBulk({ kind: 'time', rooms: rooms, field: 'dueIn', value: tm, staff: me(), at: srvNow() });
-}
 
 function done(b){ busy=false; SEL.clear(); REV=b.rev; render(b); syncBar(); }
 function ng(e){ busy=false; toast(e.message || t('failed')); load(); }
@@ -1014,6 +1224,13 @@ function openSheet(room){
   if (!r) return;
   fillSheet(r);
   $('veil').classList.add('on'); $('sheet').classList.add('on');
+  // まだ誰も確かめていない追加指示があれば、開いたときに先に聞く（OK で確認済み・点滅が止まる）
+  if (r.order && !r.orderAck && me() && !PICK) {
+    setTimeout(() => {
+      if (!CUR || CUR.room !== room || CUR.orderAck) return;
+      if (confirm(t('ackAsk', {r: room, o: CUR.order.split(' / ').map(x => '・' + x).join('\n')}))) ackOrder();
+    }, 250);
+  }
 }
 function closeSheet(){ CUR=null; $('veil').classList.remove('on'); $('sheet').classList.remove('on'); }
 
@@ -1026,14 +1243,23 @@ function fillSheet(r){
   const g = gate(r), m = minsUntil(r.dueIn);
   let html = '';
   // 業務中の追加指示（管理画面から）。入室ボタンより上に赤枠で出す
+  // 追加指示：読んだら「内容を確認しました」を押す。押すまで、タイルの「!」が赤く点滅し続ける
   const od = r.order ? '<div class="gate od"><b>'+esc(t('order'))+'</b>'
-    + r.order.split(' / ').map(x => '・' + esc(x)).join('<br>') + '</div>' : '';
+    + r.order.split(' / ').map(x => '・' + esc(x)).join('<br>')
+    + (r.orderAck ? '<span class="ackd">✓ ' + esc(t('ackBy', {n: r.orderAck})) + '</span>'
+       : me() ? '<button class="ackb" onclick="ackOrder()">' + esc(t('ackBtn', {n: me()})) + '</button>'
+              : '<span class="ackd" style="color:var(--ng)">' + esc(t('pickName')) + '</span>')
+    + '</div>' : '';
   if ($('dOrder').innerHTML !== od) $('dOrder').innerHTML = od;
-  if (g === 'skip') html += '<div class="gate skip"><b>'+esc(t('g_skip'))+'</b></div>';
+  if (r.skip) html += '<div class="gate skip"><b>'+esc(t('g_skip'))+'</b></div>';
+  else if (ddSet(r)) html += '<div class="gate skip"><b>DD</b>'+esc(t('ddHow'))+'</div>';
 
-  if (r.dueIn && r.clean.state !== 'done'){
-    html += '<div class="gate due"><b>' + esc(t('due', {t: r.dueIn})) + '</b>'
-          + esc(m < 0 ? t('dueOver', {n: Math.abs(m)}) : t('dueLeft', {n: m})) + '</div>';
+  // 締切（アーリーイン）は清掃する部屋だけ。空室・対象外・DD は出さない
+  if ((r.dueIn || r.checkIn) && isTarget(r) && !r.dd && r.clean.state !== 'done'){
+    // 早イン：イン時刻と仕上げの締切を両方出す（管理画面で入れた追加の早インも）
+    html += '<div class="gate due"><b>'
+          + esc(r.checkIn ? t('oIn', {t: r.checkIn, d: r.dueIn || '—'}) : t('due', {t: r.dueIn})) + '</b>'
+          + (m === null ? '' : esc(m < 0 ? t('dueOver', {n: Math.abs(m)}) : t('dueLeft', {n: m}))) + '</div>';
   }
   const ex = [];
   if (r.fullClean) ex.push(t('full'));
@@ -1043,7 +1269,8 @@ function fillSheet(r){
   if (r.pop)       ex.push(t('pop'));
   if (isW(r))      ex.push(t('wmake') + '（' + r.dmake + '）');
   if (r.dmake === '解除') ex.push(t('single'));
-  if (r.eco)       ex.push(t('eco'));
+  if (r.dmake === '増設解除して増設予定') ex.push(t('single'));
+  if (r.ec)        ex.push(t('ec'));
   if (r.lateOut)   ex.push(t('lateout') + ' ' + r.lateOut);
   if (ex.length || r.note){
     html += '<div class="gate note"><b>' + esc(t('ord')) + '</b>' + esc(ex.join(' / '))
@@ -1053,17 +1280,27 @@ function fillSheet(r){
 
   $('tgDD').classList.toggle('on', !!r.dd);
   $('tgSkip').classList.toggle('on', !!r.skip);
+  $('tgEc').classList.toggle('on', !!r.ec);
+  // DD・EC清掃・清掃不要はステイ・フルの部屋だけ（アウト・空室では使わない。立っていれば外せるよう出す）
+  const sf = r.kbn === 'STAY' || r.kbn === 'FULL';
+  $('rDD').style.display   = (sf || r.dd)   ? '' : 'none';
+  $('rEc').style.display   = (sf || r.ec)   ? '' : 'none';
+  $('rSkip').style.display = (sf || r.skip) ? '' : 'none';
+  // フルメイクの切り替えはステイ（S・SD）の部屋だけ（エコ清掃からフルメイクに変わることがあるため）
+  $('rFull').style.display = (sf && ['S','SD'].indexOf(String(r.code).toUpperCase()) >= 0) ? '' : 'none';
+  $('tgFull').classList.toggle('on', r.kbn === 'FULL');
   $('tgPick').classList.toggle('on', !!r.pickup);
   $('tgBag').classList.toggle('on', !!r.bag);
   $('byPick').textContent = r.pickup ? (r.pickupBy || '') : '';
   $('byBag').textContent  = r.bag ? (r.bagBy || '')
-    + (r.collectOk ? '　' + t('checkedBy') + ' ' + r.collectOk : '') : '';
+ : '';
   $('rSupply').style.display = r.dd ? '' : 'none';
   $('fSupply').value = r.supply || '要';
   $('fWater').value  = r.water === '' ? '' : r.water;
   $('fFridge').value  = r.fridge || '';
   $('fFridge2').value = r.fridgeCheck || '';
   $('fMemo').value   = r.memo || '';
+  $('fReport').value = r.report || '';
   if (!CUR || CUR.room !== r.room || $('agSp0').dataset.room !== r.room) {
     $('agSp0').dataset.room = r.room;
     loadRoomSp(r.room);
@@ -1077,7 +1314,7 @@ function fillSheet(r){
    * DD（備品 不要）の部屋は何も置かないので作業のボタンを出さない。
    */
   if (r.dd && r.supply === '不要') {
-    $('dSteps').innerHTML = '<div class="step"><div class="lock">' + esc(t('ddNoWork')) + '</div></div>';
+    $('dSteps').innerHTML = '<div class="step"><div class="lock">' + esc(t('ddNoWork')) + '</div></div>' + againBtns(r);
     return;
   }
   const dd = !!r.dd;
@@ -1111,7 +1348,36 @@ function fillSheet(r){
           + '<button class="btn ghost" onclick="act(\'undo\',\''+k+'\')">'+esc(t('undo'))+'</button></div>';
     return '<div class="step '+w.state+'"><div class="hd"><span class="nm">'+esc(name)+'</span>'
          + '<span class="st">'+info+'</span></div>'+btn+'</div>';
-  }).join('');
+  }).join('') + againBtns(r);
+}
+
+/**
+ * 同じ日に別のお客様が使ったとき：チェックまで終わった部屋は「もう一度清掃」できる（前の記録は清掃履歴に残る）。
+ * 間違えて押したときは、まだ入室していなければ前の回に戻せる（御堂筋と同じ）。
+ */
+function againBtns(r){
+  let h = '';
+  if (!r.dd && r.check.state === 'done' && me())
+    h += '<button class="btn ghost far" onclick="again()">'+esc(t('again'))+'</button>';
+  if (r.round > 1 && r.clean.state === 'todo' && r.check.state === 'todo' && me())
+    h += '<button class="btn ghost far" onclick="undoAgain()">'+esc(t('againUndo'))+'</button>';
+  return h;
+}
+/** 2回目の清掃。電波が切れているときは貯めない（その場で結果を見せる） */
+function again(){ secondClean('startSecondClean', 'cfAgain'); }
+function undoAgain(){ secondClean('undoSecondClean', 'cfAgainUndo'); }
+function secondClean(fn, cf){
+  if (!CUR || PENDING.has(CUR.room)) return;
+  if (!needName()) return;
+  const room = CUR.room;
+  if (!confirm(t(cf, {r: room}))) return;
+  holdRoom(room);
+  try {
+    google.script.run
+      .withSuccessHandler(o => { releaseRoom(room); adoptRev(o && o.__rev); apply(room, o);
+        if (o) toast(room + ' ' + t('round', {n: o.round})); })
+      .withFailureHandler(e => { releaseRoom(room); toast(e.message || t('failed')); })[fn](room, me());
+  } catch (err) { releaseRoom(room); toast(t('failed') + '（画面を開き直してください）'); }
 }
 
 /** 工程の名前。DDの部屋はDDセット／DDチェック */
@@ -1148,13 +1414,14 @@ function apply(room, obj){
   const i = BOARD.rooms.map(x=>x.room).indexOf(room);
   if (i < 0) return;
   if (!obj.spTodo) obj.spTodo = BOARD.rooms[i].spTodo;   // 月の残りは全体読み込みのときだけ届く
+  if (obj.round == null) obj.round = BOARD.rooms[i].round;  // 何回目かも全体読み込みのときだけ届く
   BOARD.rooms[i] = obj;
   recount(); updateCounts(); paint(room);
   if (CUR && CUR.room === room) fillSheet(obj);
 }
 
 function recount(){
-  const t = BOARD.rooms.filter(r => !r.skip && ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);
+  const t = BOARD.rooms.filter(r => !r.skip && !r.dd && ['OUT','STAY','FULL'].indexOf(r.kbn) >= 0);   // DD（ステイは基本DD）は数えない
   BOARD.counts = {
     total: t.length,
     done: t.filter(r=>r.clean.state==='done').length,
@@ -1164,8 +1431,8 @@ function recount(){
   };
 }
 
-function act(kind, task){
-  if (!CUR || PENDING.has(CUR.room)) return;
+function act(kind, task, n){
+  if (!CUR || whenFree(k => act(kind, task, k), n)) return;
   if (!me()){ toast(t('pickName')); $('staff').focus(); return; }
   const nm = taskLabel(CUR, task);
   if (kind==='undo'   && !confirm(t('cfUndo',   {r: CUR.room, t: nm}))) return;
@@ -1196,8 +1463,21 @@ function needName(){
   return false;
 }
 
-function flip(key){
-  if (!CUR || PENDING.has(CUR.room)) return;
+/**
+ * その部屋の送信中に押されたら、捨てずに少し待ってからもう一度やる（最大約5秒）。
+ * メモ・チェッカー報告を入れたあとにすぐスイッチを押すと、欄を離れたときの保存が先に走るので、
+ * 前はそのスイッチが黙って無視されていた。
+ */
+function whenFree(fn, n){
+  if (!CUR) return true;
+  if (!PENDING.has(CUR.room)) return false;
+  const room = CUR.room;
+  if ((n || 0) < 25) setTimeout(() => { if (CUR && CUR.room === room) fn((n || 0) + 1); }, 200);
+  return true;
+}
+
+function flip(key, n){
+  if (!CUR || whenFree(k => flip(key, k), n)) return;
   if (!needName()) return;
   // ゴミ回収・バッグ回収：押し間違いに備えて確認する。外すとチェッカーの確認も消える
   if (key === 'pickup' || key === 'bag') {
@@ -1207,9 +1487,37 @@ function flip(key){
     saveField(key, v);
     return;
   }
+  // EC清掃：ステイは基本DD。エコ清掃に変わったら EC を押す → DD・清掃不要が外れて清掃に入る（御堂筋と同じ）
+  // フルからエコ清掃に変わることもあるので、フルでも押せる。EC を外すと、ステイは DD に、フルはフルに戻る
+  if (key === 'ec') {
+    const full = CUR.kbn === 'FULL';
+    if (!confirm(t(CUR.ec ? (full ? 'cfEcOffF' : 'cfEcOff') : 'cfEcOn', {r: CUR.room}))) return;
+    saveField2(CUR.ec ? (full ? { ec: false } : { ec: false, dd: true, skip: false })
+                      : { ec: true, dd: false, skip: false });
+    return;
+  }
+  if (key === 'dd' && !CUR.dd && CUR.ec) { saveField2({ dd: true, ec: false }); return; }   // DD と EC は両立しない
+  // フルメイク：エコ清掃（や DD）からフルメイクに切り替える／戻す。区分も変わるので確かめる
+  if (key === 'full') {
+    const on = CUR.kbn !== 'FULL';
+    if (!confirm(t(on ? 'cfFullOn' : 'cfFullOff', {r: CUR.room}))) { fillSheet(CUR); return; }
+    const room = CUR.room, before = JSON.parse(JSON.stringify(CUR));
+    holdRoom(room);
+    const i = BOARD.rooms.map(x => x.room).indexOf(room);
+    if (i >= 0) { fullLocal(BOARD.rooms[i], on); CUR = BOARD.rooms[i]; }
+    try { recount(); updateCounts(); paint(room); fillSheet(CUR); } catch (e) {}
+    sendFlag(room, { full: on, __by: me() }, before);
+    return;
+  }
+  // 特別清掃：押し間違いに備えて、清掃済にする／取り消す前に確かめる（特別清掃シートにもすぐ載るため）
+  const spi = SP_KEYS.indexOf(key);
+  if (spi >= 0) {
+    const nm = (SPNAMES && SPNAMES[spi]) || t('sp');
+    if (!confirm(t(CUR[key] ? 'cfSpOff' : 'cfSpOn', {r: CUR.room, w: nm}))) { fillSheet(CUR); return; }
+  }
   // 清掃不要にした部屋はドア前に備品を置くので、DD も一緒に立てる
   if (key === 'skip' && !CUR.skip && !CUR.dd) {
-    saveField2({ skip: true, dd: true });
+    saveField2({ skip: true, dd: true, ec: false });
     return;
   }
   saveField(key, !CUR[key]);
@@ -1243,14 +1551,6 @@ function sendFlag(room, patch, before){
 }
 
 /** 複数の項目をまとめて保存する */
-/* ---------- 回収の確認（チェッカー） ---------- */
-let COLOPEN = false;
-function openCollect(){
-  COLOPEN = true; drawCollect();
-  $('cveil').classList.add('on'); $('csheet').classList.add('on');
-}
-function closeCollect(){ COLOPEN = false; $('cveil').classList.remove('on'); $('csheet').classList.remove('on'); }
-
 /* ---------- 今日の指示（清掃指示書の中身を部屋ごとにまとめて出す） ----------
  * 取り込んだ部屋の情報から作るので、サーバーの呼び出しは増えない。部屋番号を押すとその部屋が開く。 */
 let ORDOPEN = false;
@@ -1278,7 +1578,8 @@ function drawOrd(){
     '<div class="tx">'+rb(r.room)+'<span>'+r.order.split(' / ').map(esc).join('<br>')+'</span></div>').join(''));
 
   // アーリーイン（イン時刻ごと。仕上げの締切つき）
-  h += sec(t('oEarly'), group(r => r.checkIn ? r.checkIn + '|' + (r.dueIn || '') : '').map(([k, a]) => {
+  // アーリーインは清掃する部屋だけ（空室・対象外にアーリーインがあっても数えない）
+  h += sec(t('oEarly'), group(r => (r.checkIn && isTarget(r)) ? r.checkIn + '|' + (r.dueIn || '') : '').map(([k, a]) => {
     const p = k.split('|');
     return '<div class="ln">'+esc(p[1] ? t('oIn', {t: p[0], d: p[1]}) : p[0])+'</div>'+chips(a);
   }).join(''));
@@ -1294,9 +1595,10 @@ function drawOrd(){
   h += list(t('extend'), pick(r => r.extend));
   h += list(t('linen'),  pick(r => r.linen));
   h += list(t('pop'),    pick(r => r.pop));
-  h += list(t('eco'),    pick(r => r.eco));
+  h += list(t('ec'),     pick(r => r.ec));
   h += list(t('oWnew'),  pick(r => r.dmake === '新規'));
-  h += list(t('oWrel'),  pick(r => r.dmake === '解除'));
+  h += list(t('oWrel'),  pick(r => r.dmake === '解除' || r.dmake === '増設解除して増設予定'));
+
 
   // 特記（同じ文は1つにまとめる）
   const notes = {};
@@ -1308,49 +1610,8 @@ function drawOrd(){
   $('olist').innerHTML = h || '<p class="empty" style="padding:24px">'+esc(t('oNone'))+'</p>';
 }
 
-function drawCollect(){
-  const list = BOARD.rooms.filter(r => r.pickup || r.bag).sort((a,b) => cmpNo(a.room, b.room));
-  const left = list.filter(r => !r.collectOk).length;
-  $('clist').innerHTML = (list.length
-    ? '<div style="font-size:13px;margin-bottom:8px">' + esc(t('collectLeft', {n: left, all: list.length})) + '</div>'
-      + list.map(r => {
-          const what = [];
-          if (r.pickup) what.push(t('trash') + (r.pickupBy ? '　' + r.pickupBy : ''));
-          if (r.bag)    what.push(t('bagShort') + (r.bagBy ? '　' + r.bagBy : ''));
-          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;'
-            + 'border-bottom:1px solid var(--line)">'
-            + '<b style="font-size:18px;min-width:56px;font-variant-numeric:tabular-nums">' + esc(r.room) + '</b>'
-            + '<div style="flex:1;font-size:12.5px;color:var(--muted);line-height:1.5">'
-            +   what.map(esc).join('<br>')
-            +   (r.collectOk ? '<br><span style="color:var(--chk);font-weight:700">'
-                  + esc(t('checkedBy')) + ' ' + esc(r.collectOk) + '</span>' : '')
-            + '</div>'
-            + (r.collectOk
-                ? '<button class="modebtn" onclick="checkCollect(\'' + esc(r.room) + '\', false)">'
-                  + esc(t('cancelBtn')) + '</button>'
-                : '<button class="modebtn on" onclick="checkCollect(\'' + esc(r.room) + '\', true)">'
-                  + esc(t('confirmBtn')) + '</button>')
-            + '</div>';
-        }).join('')
-    : '<p style="color:var(--muted)">' + esc(t('noCollect')) + '</p>');
-}
-
 function cmpNo(a, b){ return (parseInt(a,10)||0) - (parseInt(b,10)||0); }
 
-function checkCollect(room, ok){
-  if (!me()){ toast(t('pickName')); return; }
-  const i = BOARD.rooms.map(x => x.room).indexOf(room);
-  const before = i >= 0 ? JSON.parse(JSON.stringify(BOARD.rooms[i])) : null;
-  if (i >= 0) BOARD.rooms[i].collectOk = ok ? me() + ' ' + nowHM() : '';
-  drawCollect();
-  const op = { kind: 'collect', room: room, staff: me(), ok: ok, at: srvNow() };
-  if (OUTBOX.length) { enqueue(op); return; }
-  send(op, false,
-    f => { if (f) { adoptRev(f.__rev); applyOne_(room, f); } drawCollect(); },
-    e => { if (isNetErr(e)) { enqueue(op); toast(t('qSaved')); return; }
-      if (before) applyOne_(room, before); drawCollect();
-      toast(e.message || t('failed')); });
-}
 
 function saveField2(patch){
   if (!CUR) return;
@@ -1388,11 +1649,21 @@ function saveField(key, val){
   sendFlag(room, patch, before);
 }
 
+/** フルメイクの切り替えを手元の部屋に当てる（サーバーの applyPatch_ と同じ動き） */
+function fullLocal(r, on){
+  if (['S','SD'].indexOf(String(r.code).toUpperCase()) < 0) return;
+  r.fullClean = !!on;
+  if (!(r.lateOut && String(r.lateOut) >= '19:00')) r.kbn = on ? 'FULL' : 'STAY';
+  if (on) { r.dd = false; r.ec = false; r.skip = false; }
+  else if (!r.ec) r.dd = true;
+}
+
 /** 1部屋ぶんの最新状態を、全体を作り直さずに反映する */
 function applyOne_(room, f){
   if (!f) return;
   const i = BOARD.rooms.map(x=>x.room).indexOf(room);
   if (i >= 0 && !f.spTodo) f.spTodo = BOARD.rooms[i].spTodo;   // 月の残りは全体読み込みのときだけ届く
+  if (i >= 0 && f.round == null) f.round = BOARD.rooms[i].round;
   if (i >= 0) BOARD.rooms[i] = f;
   recount(); updateCounts(); paint(room);
   if (CUR && CUR.room === room) fillSheet(f);
@@ -1461,6 +1732,7 @@ function send(op, replay, ok, bad){
       case 'code':    g.setRoomCode(op.rooms, op.code, replay ? op.at : null, op.staff); break;
       case 'time':    g.setRoomTime(op.rooms, op.field, op.value, replay ? op.at : null, op.staff); break;
       case 'collect': g.setCollectCheck(op.room, op.staff, op.ok, ...A); break;
+      case 'ack':     g.ackOrder(op.room, op.staff, ...A); break;
       default: fin(bad, { message: 'unknown' });
     }
   } catch (err) {
@@ -1483,6 +1755,7 @@ function overlayOutbox(b){
       if (op.kind === 'flag1' || op.kind === 'flags') {
         Object.keys(op.patch).forEach(k => {
           if (k === '__by') return;
+          if (k === 'full') { fullLocal(r, op.patch.full); return; }
           r[k] = op.patch[k];
           if (k === 'pickup' || k === 'bag') {
             r[k + 'By'] = op.patch[k] ? ((op.patch.__by || '') + ' ' + hmOf(op.at)).trim() : '';
@@ -1494,6 +1767,7 @@ function overlayOutbox(b){
       if (op.kind === 'code')    { r.code = op.code; return; }
       if (op.kind === 'time')    { r[op.field] = op.value; return; }
       if (op.kind === 'collect') { r.collectOk = op.ok ? (op.staff + ' ' + hmOf(op.at)) : ''; return; }
+      if (op.kind === 'ack')     { if (!r.orderAck) r.orderAck = op.staff + ' ' + hmOf(op.at); return; }
       b.rooms[i] = predict(r, op.kind, op.task, op.staff, hmOf(op.at));
     });
   });
@@ -1577,7 +1851,7 @@ $('staff').addEventListener('change', e=>{
   if (e.target.value === HELP_OPT) { addHelperName(); return; }
   if (e.target.value) localStorage.setItem('staff', e.target.value);
   paintWho();
-  drawMyWork();
+  drawMyWork(); paintTeams(); applyMine();
   if (CUR) fillSheet(CUR);      // ボタンの名前（「○○で入室」）を選び直した人に合わせる
 });
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !PENDING.size) load(); });

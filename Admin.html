@@ -361,6 +361,8 @@
            style="width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:16px">
     <input type="text" id="odText" placeholder="指示（例：タオル2枚追加、14時イン）"
            style="width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:16px;margin-top:8px">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:14px;color:var(--muted)">早インの時刻（あれば。清掃員画面の「早仕上げ」に載る）
+      <input type="time" id="odIn" style="flex:0 0 auto;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);font-size:16px"></label>
     <button class="btn" style="margin-top:10px" onclick="addOd()">指示を入れる</button>
     <div class="msg" id="odMsg"></div>
     <div id="odList" style="margin-top:8px"></div>
@@ -369,7 +371,7 @@
   <div class="card">
     <h2>部屋を直す</h2>
     <p class="hint">上の日付の部屋を1室ずつ直せます。部屋番号を入れて「呼び出す」→ 直して「この部屋を保存」。
-      入室・退出と回収の記録には触りません。コード・フル清掃・ノーメイク・延泊・Wメイク・ツイン・アパエコ・時刻・特記は、
+      入室・退出と回収の記録には触りません。ステイは基本DDです（エコ清掃に変わった部屋は EC清掃 を付けるとDDが外れます）。コード・フル清掃・ノーメイク・延泊・Wメイク・ツイン・時刻・特記は、
       朝の紙を取り込み直して保存すると読み取りの値に戻ります。レイトアウトを19時以降にすると翌日回し（対象外）になります。</p>
     <div style="display:flex;gap:8px">
       <input type="text" id="edRoom" inputmode="numeric" placeholder="部屋番号"
@@ -386,14 +388,15 @@
       <div class="er"><label>DDの備品</label>
         <select id="edSupply"><option value="">—</option><option>要</option><option>不要</option></select></div>
       <div class="er"><label>清掃不要（DDも立ちます）</label><input type="checkbox" id="edSkip"></div>
-      <div class="er"><label>アパエコ</label><input type="checkbox" id="edEco"></div>
+      <div class="er"><label>EC清掃（エコ清掃に変わった。DDが外れて清掃に入る）</label><input type="checkbox" id="edEc"></div>
       <div class="er"><label>Wメイク</label><select id="edW"></select></div>
       <div class="er"><label>ツイン</label><input type="checkbox" id="edTw"></div>
       <div class="er"><label>締切（仕上げ）</label><input type="time" id="edDue"></div>
-      <div class="er"><label>IN時刻</label><input type="time" id="edIn"></div>
+      <div class="er"><label>IN時刻（早イン。入れると締切は30分前）</label><input type="time" id="edIn"></div>
       <div class="er"><label>レイトアウト</label><input type="time" id="edLate"></div>
       <div class="er col"><label>指示書の特記</label><input type="text" id="edNote"></div>
-      <div class="er col"><label>現場メモ</label><input type="text" id="edMemo"></div>
+      <div class="er col"><label>現場メモ（フロアレポートの備考に載る。日報には載らない）</label><input type="text" id="edMemo"></div>
+      <div class="er col"><label>チェッカー報告（日報の備考に載る）</label><input type="text" id="edReport"></div>
       <div class="er col"><label>追加指示</label><input type="text" id="edOrder" placeholder="複数あるときは「 / 」で区切る"></div>
       <button class="btn save" onclick="saveRoom()">この部屋を保存</button>
     </div>
@@ -491,9 +494,17 @@ const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&
 const CODES = ['','V','S','SD','D','O','I','C','P','X','A'];
 const CODENAME = {'':'（未設定）',V:'V 空室',S:'S ステイ',SD:'SD 滞在',D:'D 出発予定',O:'O 出済',
                   I:'I 仮チェックイン',C:'C 清掃',P:'P 点検',X:'X 故障',A:'A ブロック'};
-const EXTRA = [['fullClean','フル清掃'],['eco','エコ清掃'],['noMake','ノーメイク'],
+const EXTRA = [['fullClean','フル清掃'],['noMake','ノーメイク'],
                ['linen','リネン交換'],['extend','延泊'],['pop','POP回収']];
 const KBNNAME = {OUT:'アウト',STAY:'ステイ',FULL:'フルメイク',V:'空室',NONE:'対象外'};
+/** Wメイク（増設）の区分を、何人分に変わるのかまで分かる言葉にする */
+/** ダブルメイク指示書の凡例どおり（11/03 の紙で確かめた）。ピンクの「増設セット解除→ベッド下収納常設部屋に変更」は解除に入る */
+const DMAKE_LABEL = {
+  '新規': '新規・緑（1名→2名にする）', '継続': '継続・黄（2名のまま）', '常設': '常設・オレンジ（2名）',
+  '解除': '解除・赤／ピンク（2名→1名・シングルに戻す）', 'ベッド下収納': 'ベッド下収納常設・青（1名）',
+  '増設予定': '増設予定（前の版の読み）', '増設解除して増設予定': '増設セット解除（前の版の読み・シングルに戻す）'
+};
+const dmakeLabel = k => DMAKE_LABEL[k] || k;
 let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '', FINISH_NOTE = '', LOADED_DATE = '', SP_SAVED = '';
 
 /** 「2026/9/29」「2026-09-29」などを yyyy-MM-dd にそろえる */
@@ -766,7 +777,7 @@ function show(res){
     d.rooms.forEach(x => { (byKind[x.kind] = byKind[x.kind] || []).push(x.room); });
     $('ord').innerHTML += '<div style="margin-top:10px"><b style="min-width:0">ダブルメイク指示書</b></div>'
       + Object.keys(byKind).map(k =>
-          '<div><b>'+esc(k)+'</b>'+byKind[k].length+'室：'+esc(byKind[k].join('、'))+'</div>').join('')
+          '<div><b>'+esc(dmakeLabel(k))+'</b>'+byKind[k].length+'室：'+esc(byKind[k].join('、'))+'</div>').join('')
       + line('ツイン', d.twins.map(p=>p.join('・')))
       + line('コネクト', d.connects.map(p=>p.join('・')))
       + line('注意書き', d.note);
@@ -840,6 +851,7 @@ function drawRows(){
     +   EXTRA.map(([k,n])=>'<button class="chip'+(r[k]?' on':'')+'" '
     +     'onclick="flipEx('+i+',\''+k+'\')">'+n+'</button>').join('')
     + '</div>'
+    + (r.dmake ? '<div class="flagline" style="color:'+(r.dmake === '解除' ? '#A63D2A' : '#8A5300')+'"><b>Wメイク</b>　'+esc(dmakeLabel(r.dmake))+'</div>' : '')
     + (r.note ? '<div class="flagline" style="color:var(--muted)">'+esc(r.note)+'</div>' : '')
     + (needCheck(r)
         ? '<button class="chip" style="margin-top:8px;border-color:#2E7D4F;color:#2E7D4F" '
@@ -882,7 +894,7 @@ function flipEx(i,k){
 }
 function kbnOf(code, full, r){
   if (r && r.lateOut && String(r.lateOut) >= '19:00') return 'NONE';   // 翌日回し
-  const m = {O:'OUT',D:'OUT',S:'STAY',SD:'STAY',V:'V'};
+  const m = {O:'OUT',D:'OUT',S:'STAY',SD:'STAY',V:'V',C:'V'};   // C（清掃）は清掃しないので空室と同じ
   const k = m[String(code||'').toUpperCase()] || 'NONE';
   return (k==='STAY' && full) ? 'FULL' : k;
 }
@@ -926,17 +938,19 @@ function saveNow_(msg){
 /* ---------- 業務中の追加指示 ---------- */
 function addOd(){
   const rooms = $('odRooms').value, text = $('odText').value;
-  if (!rooms.trim() || !text.trim()){ $('odMsg').textContent = '部屋番号と指示を入れてください'; return; }
+  // 早インの時刻だけでも入れられる（指示の文は「早イン 12:00」になる）
+  if (!rooms.trim() || (!text.trim() && !$('odIn').value)){ $('odMsg').textContent = '部屋番号と、指示か早インの時刻を入れてください'; return; }
   $('odMsg').innerHTML = '<span class="spin"></span>送信中…';
   adminRun()
     .withSuccessHandler(r=>{
       $('odMsg').textContent = (r.added.length ? r.added.join('、') + ' に入れました。' : '')
+        + (r.added.length && r.inTime ? '　早イン ' + r.inTime + '（早仕上げに載せました）' : '')
         + (r.missing.length ? '　' + r.missing.join('、') + ' はその日の部屋にありません。' : '');
-      if (r.added.length){ $('odRooms').value=''; $('odText').value=''; }
+      if (r.added.length){ $('odRooms').value=''; $('odText').value=''; $('odIn').value=''; }
       drawOd(r.orders);
     })
     .withFailureHandler(e=>{ $('odMsg').textContent = e.message || '入れられませんでした'; })
-    .addOrder(rooms, text, $('date').value);
+    .addOrder(rooms, text, $('date').value, $('odIn').value);
 }
 function drawOd(list){
   $('odList').innerHTML = (list || []).map(o =>
@@ -968,31 +982,47 @@ function loadRoom(){
                : r.clean.state === 'doing' ? '清掃中（'+r.clean.staff+'）' : '未着手';
       $('edMsg').textContent = r.room + '　' + (KBNNAME[r.kbn] || r.kbn) + '　' + st
         + (r.flagNote ? '\n読み取り時のメモ：' + r.flagNote : '');
-      $('edW').innerHTML = ['', ...(r.dmakeKinds || [])].map(k=>'<option value="'+esc(k)+'">'+(k?esc(k):'—')+'</option>').join('');
+      $('edW').innerHTML = ['', ...(r.dmakeKinds || [])].map(k=>'<option value="'+esc(k)+'">'+(k?esc(dmakeLabel(k)):'—')+'</option>').join('');
       if (r.code && ![...$('edCode').options].some(o=>o.value===r.code))
         $('edCode').insertAdjacentHTML('beforeend','<option value="'+esc(r.code)+'">'+esc(r.code)+'</option>');
       $('edCode').value = r.code || '';   // 空の部屋を V にしない
       $('edFull').checked = !!r.fullClean; $('edNm').checked = !!r.noMake; $('edExt').checked = !!r.extend;
       $('edDd').checked = !!r.dd; $('edSupply').value = r.supply || ''; $('edSkip').checked = !!r.skip;
-      $('edEco').checked = !!r.eco; $('edW').value = r.dmake || ''; $('edTw').checked = !!r.twin;
+      $('edEc').checked = !!r.ec; $('edW').value = r.dmake || ''; $('edTw').checked = !!r.twin;
       $('edDue').value = r.dueIn || ''; $('edIn').value = r.checkIn || '';
       $('edLate').value = r.lateOut || ''; $('edNote').value = r.note || '';
-      $('edMemo').value = r.memo || ''; $('edOrder').value = r.order || '';
+      $('edMemo').value = r.memo || ''; $('edReport').value = r.report || ''; $('edOrder').value = r.order || '';
       $('edForm').hidden = false;
       ED.__date = day; ED.__form = edValues();   // 呼び出したときの中身。保存は変えた欄だけ送る
     })
     .withFailureHandler(e=>{ $('edForm').hidden = true; $('edMsg').textContent = e.message || '呼び出せませんでした'; })
     .getRoomAdmin(no, $('date').value);
 }
+// IN時刻を入れたら、締切（仕上げ）を30分前にして見せる（サーバーも同じにする）
+$('edIn').addEventListener('change', ()=>{
+  const m = $('edIn').value.match(/^(\d{2}):(\d{2})$/);
+  if (!m) { $('edDue').value = ''; return; }
+  let t = (+m[1]) * 60 + (+m[2]) - 30; if (t < 0) t += 1440;
+  $('edDue').value = ('0' + Math.floor(t / 60)).slice(-2) + ':' + ('0' + (t % 60)).slice(-2);
+});
 // 清掃不要にしたら DD も立てる（清掃員画面と同じ）
-$('edSkip').addEventListener('change', ()=>{ if ($('edSkip').checked) $('edDd').checked = true; });
+$('edSkip').addEventListener('change', ()=>{ if ($('edSkip').checked) { $('edDd').checked = true; $('edEc').checked = false; } });
+// DD と EC清掃は両立しない（御堂筋と同じ）
+$('edEc').addEventListener('change', ()=>{ if ($('edEc').checked) { $('edDd').checked = false; $('edSkip').checked = false; } });
+$('edDd').addEventListener('change', ()=>{ if ($('edDd').checked) $('edEc').checked = false; });
+// ステイ（S・SD）に直したら DD を付ける（ステイは基本DD）。EC・フルの部屋はそのまま。ステイ以外にしたら EC は外す
+$('edCode').addEventListener('change', ()=>{
+  const stay = ['S','SD'].indexOf($('edCode').value) >= 0;
+  if (stay && !$('edEc').checked && !$('edFull').checked) $('edDd').checked = true;
+  if (!stay && !$('edFull').checked) $('edEc').checked = false;
+});
 function edValues(){
   return {
     code: $('edCode').value, fullClean: $('edFull').checked, noMake: $('edNm').checked, extend: $('edExt').checked,
-    dd: $('edDd').checked, supply: $('edSupply').value, skip: $('edSkip').checked, eco: $('edEco').checked,
+    dd: $('edDd').checked, supply: $('edSupply').value, skip: $('edSkip').checked, ec: $('edEc').checked,
     dmake: $('edW').value, twin: $('edTw').checked,
     dueIn: $('edDue').value, checkIn: $('edIn').value, lateOut: $('edLate').value,
-    note: $('edNote').value, memo: $('edMemo').value, order: $('edOrder').value
+    note: $('edNote').value, memo: $('edMemo').value, report: $('edReport').value, order: $('edOrder').value
   };
 }
 function saveRoom(){
@@ -1107,13 +1137,20 @@ function drawSpConf(sp){
     +   esc(sp.month) + ' の特別清掃の内容'
     +   (sp.inheritedFrom ? '　<span style="color:var(--warn)">（' + esc(sp.inheritedFrom)
     +     ' の設定を引き継いでいます）</span>' : '') + '</div>'
-    + [0,1].map(i =>
-        '<div style="margin-bottom:7px"><b style="font-size:12px;color:var(--muted);'
+    // 1枠目・2枠目は決まった項目から選ぶ。どれにも当たらないときは「その他（自由に入力）」で書ける
+    + [0,1].map(i => {
+        const cur = sp.names[i] || '', free = !!cur && sp.choices.indexOf(cur) < 0;
+        return '<div style="margin-bottom:7px"><b style="font-size:12px;color:var(--muted);'
         + 'display:inline-block;min-width:54px">' + (i+1) + '枠目</b>'
-        + '<select id="spName'+i+'" style="border:1px solid var(--line);border-radius:6px;'
+        + '<select id="spName'+i+'" onchange="spFreeShow('+i+')" style="border:1px solid var(--line);border-radius:6px;'
         + 'padding:8px;background:var(--surface);min-width:210px">'
-        + opt('', sp.names[i]) + sp.choices.map(c => opt(c, sp.names[i])).join('')
-        + '</select></div>').join('')
+        + opt('', free ? '__free__' : cur) + sp.choices.map(c => opt(c, cur)).join('')
+        + '<option value="__free__"'+(free ? ' selected' : '')+'>その他（自由に入力）</option>'
+        + '</select>'
+        + '<input id="spFree'+i+'" value="'+esc(free ? cur : '')+'" placeholder="項目を入力（例：カーテンレール）"'
+        + (free ? '' : ' hidden') + ' style="display:block;margin:6px 0 0 54px;border:1px solid var(--line);border-radius:6px;'
+        + 'padding:8px;background:var(--surface);min-width:210px"></div>';
+      }).join('')
     + '<div style="margin-bottom:7px"><b style="font-size:12px;color:var(--muted);'
     +   'display:inline-block;min-width:54px">3枠目</b>'
     +   '<input id="spName2" value="" placeholder="'
@@ -1125,11 +1162,22 @@ function drawSpConf(sp){
     + '<div class="msg" id="spMsg">' + esc(SP_SAVED) + '</div>'; SP_SAVED = '';
 }
 
+/** 「その他（自由に入力）」を選んだ枠だけ入力欄を出す */
+function spFreeShow(i){
+  const on = $('spName' + i).value === '__free__';
+  $('spFree' + i).hidden = !on;
+  if (on) $('spFree' + i).focus();
+}
 function saveSpNames(){
-  const names = [$('spName0').value, $('spName1').value, $('spName2').value];
+  const pick = i => $('spName' + i).value === '__free__' ? $('spFree' + i).value.trim() : $('spName' + i).value;
+  for (const i of [0, 1]) {
+    if ($('spName' + i).value === '__free__' && !pick(i)) { $('spMsg').textContent = (i + 1) + '枠目の項目を入力してください'; return; }
+  }
+  const names = [pick(0), pick(1), $('spName2').value];
   $('spMsg').innerHTML = '<span class="spin"></span>保存中…';
   adminRun()
-    .withSuccessHandler(r=>{ SP_SAVED = '保存しました'; refresh(); })
+    .withSuccessHandler(r=>{ SP_SAVED = r && r.sheetError ? '保存しました（特別清掃シートは作り直せませんでした：' + r.sheetError + '）'
+                                                : '保存しました。特別清掃シートも新しい項目で作り直しました'; refresh(); })
     .withFailureHandler(e=>{ $('spMsg').textContent = e.message || '保存できませんでした'; })
     .setSpecialNames($('date').value.slice(0,7), names);
 }
@@ -1162,7 +1210,6 @@ function makeDaily(btn){
       const todo = [
         ['チェックが終わっていない部屋', p.noCheck],
         ['入室したまま退出していない部屋', p.inRoom],
-        ['回収を確認していない部屋', p.collect],
         ['DDセット・DDチェックが済んでいない部屋', p.ddTodo]
       ].filter(x => x[1] && x[1].length);
       $('dailyMsg').innerHTML = r.date + ' の日報を作りました（未清掃 ' + r.undone
