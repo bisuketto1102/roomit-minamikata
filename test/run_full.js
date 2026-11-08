@@ -27,7 +27,7 @@ function server() {
   const ctx = vm.createContext(env);
   env.PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', 'x');
   env.PropertiesService.getScriptProperties().setProperty('ADMIN_PIN', '1234');
-  let drop = [], prompts = [], paper = null;   // drop[i]：i 回目の読みで落とす部屋。paper：紙のフル清掃（null は 9/29）
+  let drop = [], prompts = [], paper = null, hand = [];   // drop[i]：i 回目の読みで落とす部屋。paper：紙のフル清掃（null は 9/29）。hand：AI が手書きとした部屋
   env.UrlFetchApp.fetchAll = reqs => reqs.map((q, i) => {
     const pr = JSON.parse(q.payload).contents[0].parts[0].text;
     let data;
@@ -39,6 +39,7 @@ function server() {
       prompts.push(pr);
       data = JSON.parse(JSON.stringify(D.ORDER));
       data.fullClean = (paper || data.fullClean).filter(no => (drop[i] || []).indexOf(no) < 0);
+      data.handwritten = hand;
     }
     const txt = JSON.stringify(data);
     return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: txt }] } }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 } }) };
@@ -77,8 +78,17 @@ function server() {
   r = go(n, [['913'], []]);        // 片方だけ落とした → 和で足りる
   ok(!r.v.fullGap && !r.v.warn.some(w => FULL.test(w)), '片方の読みで読めていれば出さない（2回の読みの食い違いは今までどおり）');
 
-  r = go(n - 1, []);               // 読めたほうが多い
-  ok(/読めたのは8室。紙と見比べて余分な部屋を外してください/.test(r.v.fullGap), '多く読めたときも赤：' + r.v.fullGap);
+  r = go(n - 1, []);               // 読めたほうが多い：正しい部屋を外させないよう「外して」とは言わない
+  ok(/読めたのは8室。紙と見比べてください（手書きで足した部屋は黄色く塗られていないので数に入りません）/.test(r.v.fullGap) && !/外して/.test(r.v.fullGap),
+    '多く読めたときも赤（外せとは言わない）：' + r.v.fullGap);
+
+  // 手書きで白いマスに書き足した部屋（AI の handwritten）は黄色くないので除いて比べる
+  paper = D.ORDER.fullClean.concat(['1101']); hand = ['1101'];
+  r = go(n, []);
+  ok(!r.v.fullGap && !r.v.warn.some(w => FULL.test(w)), '手書きで足した部屋は数に入れない：' + (r.v.fullGap || '出ない'));
+  r = go(n, [['913'], ['913']]);
+  ok(/読めたのは7室（手書きの 1101 は除いた）。紙と見比べて足りない部屋を足してください/.test(r.v.fullGap), '手書きを除いて1室足りない → 赤：' + r.v.fullGap);
+  paper = null; hand = [];
 
   for (const c of [null, undefined, '', 'abc', -1, 2.5]) {
     r = go(c, [['913'], ['913']]);
@@ -86,8 +96,18 @@ function server() {
     ok(r.ord.fullCount === null && !r.v.fullGap && fw.length === 1 && fw[0] === 'フル清掃の数を確かめられなかった（黄色いマスを数えられなかった）',
       '数えられなかった（' + JSON.stringify(c) + '）：1行だけ・赤にしない');
   }
+  // 黄色が0：数えられなかったのと同じ扱い。フル清掃の無い日はふつうにあるので、AI も0なら何も出さない
+  paper = [];
   r = go(0, []);
-  ok(/黄色いマスは0室、読めたのは8室/.test(r.v.fullGap), '0室と数えたのに読めた → 赤');
+  ok(!r.v.fullGap && !r.v.warn.some(w => FULL.test(w)), '黄色0・読めたのも0：何も出さない');
+  paper = null;
+  r = go(0, []);
+  let fw0 = r.v.warn.filter(w => FULL.test(w));
+  ok(!r.v.fullGap && fw0.length === 1 && /確かめられなかった/.test(fw0[0]), '黄色0なのに読めた：黄色の1行だけ（赤にしない）：' + fw0.join(' / '));
+  paper = ['1101']; hand = ['1101'];
+  r = go(0, []);
+  ok(!r.v.fullGap && !r.v.warn.some(w => FULL.test(w)), '黄色0・手書きだけ読めた：何も出さない');
+  paper = null; hand = [];
   let threw = false; try { A.readOrder('0000', 'QUJD', 'application/pdf', n); } catch (e) { threw = true; }
   ok(threw, '暗証番号が違えば読まない');
   env.CacheService.getScriptCache().put('pinFail', '0', 600);   // まちがえた数を戻す（この仕掛けには user lock が無く、1回で止まる）
@@ -114,10 +134,19 @@ function server() {
     if (how !== 'pdf') {   // PDF を写真（JPEG）にしてから数える。skew は少し傾けて・ずらして（スキャンのずれ）
       let c = await pageCanvas(file, 2600);
       if (how !== 'jpeg') {
-        const [deg, dx, dy] = how.split(':').slice(1).map(Number);
+        const [kind, a1, a2, a3] = how.split(':');
         const d = document.createElement('canvas'); d.width = c.width; d.height = c.height;
         const g = d.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, d.width, d.height);
-        g.translate(d.width / 2 + dx, d.height / 2 + dy); g.rotate(deg * Math.PI / 180); g.drawImage(c, -c.width / 2, -c.height / 2);
+        if (kind === 'skew') { g.translate(d.width / 2 + Number(a2), d.height / 2 + Number(a3)); g.rotate(Number(a1) * Math.PI / 180); g.drawImage(c, -c.width / 2, -c.height / 2); }
+        else g.drawImage(c, 0, 0);
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        if (kind === 'tint') {   // 暖色の照明・暗い写真（色をかける）
+          g.globalCompositeOperation = 'multiply'; g.fillStyle = a1; g.fillRect(0, 0, d.width, d.height); g.globalCompositeOperation = 'source-over';
+        }
+        if (kind === 'shade') {  // 左上が暗い影
+          const gr = g.createLinearGradient(0, 0, d.width, d.height);
+          gr.addColorStop(0, 'rgba(0,0,0,' + a1 + ')'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, d.width, d.height);
+        }
         c = d;
       }
       const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
@@ -145,8 +174,9 @@ function server() {
           + '　マス ' + o.r.yellow.map(c => c.join('-')).join(' ') : '') + '　' + o.ms + 'ms');
       if (process.env.DBG && o.r) console.log('  横線 ' + o.r.ys.join(',') + '\n  左の線のまとまり\n    ' + o.r.groups.join('\n    '));
     }
-    // 大きく傾いた写真：数えられなくてもよい（null）。まちがった数を出さないこと（出すと赤い知らせで保存を止めてしまう）
-    for (const how of ['skew:1:0:0', 'skew:-1.5:40:40', 'skew:3:0:0']) {
+    // 大きく傾いた・暖色の照明・影・暗い写真：数えられなくてもよい（null）。まちがった数を出さないこと（出すと赤い知らせで保存を止めてしまう）
+    for (const how of ['skew:1:0:0', 'skew:-1.5:40:40', 'skew:3:0:0', 'tint:#fff0c0', 'tint:#ffe8a0', 'tint:#ffe090',
+                       'tint:#d0d0d0', 'tint:#a0a0a0', 'tint:#808080', 'shade:0.25', 'shade:0.4', 'shade:0.6']) {
       const o = await run(k, b64, 'application/pdf', how);
       const ok = o.n === null || o.n === WANT[k].n;
       if (!ok) bad++;

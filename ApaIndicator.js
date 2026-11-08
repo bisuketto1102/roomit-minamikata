@@ -1075,14 +1075,22 @@ function verify_(rooms, order, orphan, ruled) {
 
   // フル清掃：管理画面で数えた黄色いマスの数（fullCount）と、2回の読みで読めた部屋数を比べる。
   // 合っていれば何も出さない。合わないときだけ赤（fullGap。管理画面は保存の前にも確かめる）。
+  // 手書きで白いマスに書き足した部屋は黄色くないので、AI が手書きとした部屋は除いて比べる。
   // 数えられなかったとき（写真の傾き・枠が見つからない）は1行だけ（赤にしない・保存は止めない）。
+  // 黄色が0のときも数えられなかったのと同じ（フル清掃の無い日はふつうにある）。AI が1室以上読んでいたときだけ1行出す。
   let fullGap = '';
-  const fullRead = (order.fullClean || []).length;
-  if (order.fullCount == null) warn.push('フル清掃の数を確かめられなかった（黄色いマスを数えられなかった）');
-  else if (order.fullCount !== fullRead) {
-    fullGap = 'フル清掃の黄色いマスは' + order.fullCount + '室、読めたのは' + fullRead + '室。'
-      + (order.fullCount > fullRead ? '紙と見比べて足りない部屋を足してください' : '紙と見比べて余分な部屋を外してください')
-      + (fullRead ? '（読めた部屋：' + order.fullClean.join('、') + '）' : '');
+  const hw = order.handwritten || [];
+  const fullAll = order.fullClean || [];
+  const printed = fullAll.filter(no => hw.indexOf(no) < 0), handFull = fullAll.filter(no => hw.indexOf(no) >= 0);
+  const UNSURE_FULL = 'フル清掃の数を確かめられなかった（黄色いマスを数えられなかった）';
+  if (order.fullCount == null) warn.push(UNSURE_FULL);
+  else if (order.fullCount === 0) { if (printed.length) warn.push(UNSURE_FULL); }
+  else if (order.fullCount !== printed.length) {
+    fullGap = 'フル清掃の黄色いマスは' + order.fullCount + '室、読めたのは' + printed.length + '室'
+      + (handFull.length ? '（手書きの ' + handFull.join('、') + ' は除いた）' : '') + '。'
+      + (order.fullCount > printed.length ? '紙と見比べて足りない部屋を足してください'
+        : '紙と見比べてください（手書きで足した部屋は黄色く塗られていないので数に入りません）')
+      + (printed.length ? '（読めた部屋：' + printed.join('、') + '）' : '');
     warn.unshift(fullGap);
   }
   if ((order.struck || []).length)
