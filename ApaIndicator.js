@@ -406,14 +406,21 @@ function indicatorSchema_() {
  * 1回だけだと、フル清掃の欄の部屋を読み落とすことがあった（11/03。2回目に読み直すと読めた）。
  * 部屋の一覧（フル清掃・ノーメイク・リネン交換依頼・アーリーイン・レイトアウト・延泊など）は2回の和をとり、
  * 片方だけに出た部屋は要確認に回す（落とすより出して人が見るほうが安全）。
+ *
+ * それでもフル清掃の部屋を2回とも落とすことがある（11/06 の 413）。紙に合計の数は無いので、
+ * 管理画面がフル清掃の欄の黄色く塗られたマスを数えて fullCount で渡す（数えられなかったときは null）。
+ * 読めた部屋数と比べるのは verify_。
  */
-function readOrder_(base64, mimeType) {
+function readOrder_(base64, mimeType, fullCount) {
   const key = apiKey_();
   const out = callGeminiMany_(key, [
     { base64: base64, mimeType: mimeType, prompt: orderPrompt_('down'), schema: orderSchema_() },
     { base64: base64, mimeType: mimeType, prompt: orderPrompt_('up'),   schema: orderSchema_() }
   ]);
-  return Object.assign(mergeOrders_(normOrder_(out[0]), normOrder_(out[1])), { usage: USAGE_ });
+  const n = Number(fullCount);
+  return Object.assign(mergeOrders_(normOrder_(out[0]), normOrder_(out[1])), {
+    fullCount: (fullCount != null && fullCount !== '' && n >= 0 && n === Math.floor(n)) ? n : null,
+    usage: USAGE_ });
 }
 
 /** 2回の読みを1つにする。部屋の一覧は和をとり、片方だけの部屋を split に残す */
@@ -480,8 +487,10 @@ function orderPrompt_(order) {
     '2) 上段の数値欄 → 「清掃指示数」の数字を orderCount に入れる',
     '3)「本日の清掃予定客室数」… 2F〜12Fの階ごとの室数と合計。',
     '   planned に [{floor:"2F", rooms:12}, ...]、合計を plannedTotal に。',
-    '4)「フル清掃（リネン強制交換）」… 丸で囲まれた部屋番号を fullClean に列挙。',
-    '   手書きで書き足された番号も必ず含める。',
+    '4)「★フル清掃（リネン強制交換）」の枠（左側、「★リネン交換依頼部屋」の上）… 黄色く塗られたマス',
+    '   （丸で囲まれていることもある）の部屋番号を全部 fullClean に列挙。',
+    '   マスを1つずつ数え、黄色いマスの数と fullClean の部屋番号の数が合うか確かめる。',
+    '   手書きで書き足された番号も必ず含める。ほかの欄（レイトアウト・アーリーインなど）の黄色いマスは入れない。',
     '5)「本日ノーメイク部屋」… 部屋番号と、その下の「要」「不要」を noMake に。',
     '   [{room:"706", need:"要"}] の形。「要」はドア前に備品セットを置く意味。',
     '6)「リネン交換依頼部屋」… 部屋番号を linenRequest に列挙',
@@ -977,6 +986,19 @@ function verify_(rooms, order, orphan, ruled) {
   if ((order.split || []).length) warn.push('清掃指示書の2回の読みで食い違った部屋（片方だけで読めた。紙と見比べてください）：'
     + order.split.map(x => x.room + '（' + x.field + '）').join('、'));
   if (order.handwritten.length) warn.push('指示書の手書き：' + order.handwritten.join('、'));
+
+  // フル清掃：管理画面で数えた黄色いマスの数（fullCount）と、2回の読みで読めた部屋数を比べる。
+  // 合っていれば何も出さない。合わないときだけ赤（fullGap。管理画面は保存の前にも確かめる）。
+  // 数えられなかったとき（写真の傾き・枠が見つからない）は1行だけ（赤にしない・保存は止めない）。
+  let fullGap = '';
+  const fullRead = (order.fullClean || []).length;
+  if (order.fullCount == null) warn.push('フル清掃の数を確かめられなかった（黄色いマスを数えられなかった）');
+  else if (order.fullCount !== fullRead) {
+    fullGap = 'フル清掃の黄色いマスは' + order.fullCount + '室、読めたのは' + fullRead + '室。'
+      + (order.fullCount > fullRead ? '紙と見比べて足りない部屋を足してください' : '紙と見比べて余分な部屋を外してください')
+      + (fullRead ? '（読めた部屋：' + order.fullClean.join('、') + '）' : '');
+    warn.unshift(fullGap);
+  }
   if ((order.struck || []).length)
     warn.push('取り消し線が引かれた特記（載せていません）：' + order.struck.join('、'));
   const nd = rooms.filter(r => r.nextDay).map(r => r.room);
@@ -992,7 +1014,8 @@ function verify_(rooms, order, orphan, ruled) {
     byCode: got,
     byFloor: byFloor,
     message: msgs.length ? msgs.join(' ／ ') : '2枚の数字がすべて一致',
-    warn: warn
+    warn: warn,
+    fullGap: fullGap
   };
 }
 

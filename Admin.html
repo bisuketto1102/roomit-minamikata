@@ -575,6 +575,15 @@ function unlock(){
         if (f === 'f1') CROPS = null;
         $(p).innerHTML = '<img src="data:image/jpeg;base64,'+IMG[f]+'">';
       }
+      // 清掃指示書：フル清掃の黄色いマスを数える（読み取りを送るときに待って、数をサーバーへ渡す）
+      if (f === 'f2') {
+        $(p).insertAdjacentHTML('beforeend', '<div class="fn" id="fullMsg">フル清掃のマスを数え中…</div>');
+        const mine = FULL_P = countFullClean(file);
+        mine.then(n => {
+          if (FULL_P !== mine || !$('fullMsg')) return;
+          $('fullMsg').textContent = n == null ? '' : 'フル清掃の黄色いマス ' + n + '室';
+        });
+      }
       $(s).classList.add('on');
     } catch(err){ alert('ファイルを開けませんでした'); }
     $('go').hidden = false; $('go').textContent = '読み取る';
@@ -651,6 +660,120 @@ async function cropIndicator(file){
   return [cut(y0, y0 + h * 0.70), cut(y0 + h * 0.60, y1)];
 }
 
+/* ---------- 清掃指示書：フル清掃の黄色いマスを数える ----------
+ * AI はフル清掃の欄の部屋を2回の読みで2回とも落とすことがある（11/6 の 413）。紙に合計の数は無いので、
+ * 欄の黄色く塗られたマスをここで数え（FULL_P）、読み取りに付けて送り、サーバーで読めた部屋数と比べる（verify_）。
+ * 欄の見つけ方：ページを画像にし、ページの左半分だけで終わる横線（右端が真ん中より左）のまとまりのうち、
+ * いちばん上のもの＝「★フル清掃」の枠（上の数字の欄・階別の欄は右端まで続くので入らない。右のノーメイクの枠とは隙間で切れる）。
+ * その下の「リネン交換依頼部屋」「アーリーチェックイン」の枠は、線のまとまりが別になるので入らない。
+ * 縦線でマスに分け、中が黄色いマスを数える。枠が見つからない・形が変なときは null（数えられなかった）。 */
+let FULL_P = null;   // 数えている途中・数え終わった数（Promise。null＝数えられなかった）
+let FULL_PAPER = null;   // 読み取った清掃指示書の黄色いマスの数。保存の前に一覧のフル清掃の部屋数と比べる
+async function pageCanvas(file, longSide){
+  const c = document.createElement('canvas');
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    const lib = await loadPdfJs();
+    const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const page = await pdf.getPage(1);
+    const v1 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: longSide / Math.max(v1.width, v1.height) });
+    c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    return c;
+  }
+  const img = await new Promise((res, rej)=>{
+    const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('no'));
+    im.src = URL.createObjectURL(file);
+  });
+  const s = longSide / Math.max(img.width, img.height);
+  c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+/** 数えた結果の中身（テストで枠の位置も見る）。数えられなければ null */
+function findFullCells(cv){
+  const W = cv.width, H = cv.height;
+  const px = cv.getContext('2d').getImageData(0, 0, W, H).data;
+  const dark = new Uint8Array(W * H), yel = new Uint8Array(W * H);
+  for (let i = 0, j = 0; j < W * H; i += 4, j++) {
+    const r = px[i], g = px[i+1], b = px[i+2];
+    // 黒い線・字。黄色のマスに挟まれた線は、傾いた写真だと黄色が混ざって (130,125,20) のようになるので、赤と緑の暗さで決める。赤い字は入れない
+    if (r < 160 && g < 160 && b < 170) dark[j] = 1;
+    else if (r > 170 && g > 150 && b < 160 && r - b > 70 && g - b > 60) yel[j] = 1;   // 黄色の塗り
+  }
+  // 横線：上下2画素まで広げて（少しの傾き）、9割以上つながった長い黒の並び
+  const D = 2, gapMax = Math.max(2, Math.round(W * 0.003)), minLen = W * 0.25;
+  const segs = [];
+  for (let y = D; y < H - D; y++) {
+    let x0 = -1, last = -1, n = 0;
+    const flush = () => { if (x0 >= 0 && last - x0 + 1 >= minLen && n >= (last - x0 + 1) * 0.9) segs.push({ y: y, x0: x0, x1: last }); x0 = -1; n = 0; };
+    for (let x = 0; x < W; x++) {
+      let d = 0; for (let k = -D; k <= D && !d; k++) d = dark[(y + k) * W + x];
+      if (d) { if (x0 < 0 || x - last > gapMax) { flush(); x0 = x; } last = x; n++; }
+    }
+    flush();
+  }
+  // 近い行の同じ線を1本にまとめる
+  const lines = [];
+  segs.forEach(s => {
+    const h = lines.filter(l => s.y - l.yb <= 2 && s.x0 < l.x1 && s.x1 > l.x0)[0];
+    if (h) { h.yb = s.y; h.x0 = Math.min(h.x0, s.x0); h.x1 = Math.max(h.x1, s.x1); }
+    else lines.push({ ya: s.y, yb: s.y, x0: s.x0, x1: s.x1 });
+  });
+  lines.forEach(l => { l.y = (l.ya + l.yb) / 2; });
+  // 左半分だけの線（右端が真ん中より左）を、同じ幅で続くまとまりに分ける
+  const left = lines.filter(l => l.x0 < W * 0.2 && l.x1 > W * 0.3 && l.x1 < W * 0.56).sort((a, b) => a.y - b.y);
+  const groups = [];
+  left.forEach(l => {
+    const g = groups[groups.length - 1], p = g && g[g.length - 1];
+    if (p && l.y - p.y <= H * 0.05 && Math.abs(l.x0 - p.x0) < W * 0.03 && Math.abs(l.x1 - p.x1) < W * 0.03) g.push(l);
+    else groups.push([l]);
+  });
+  const tb = groups.filter(g => g.length >= 3)[0];                 // いちばん上の枠
+  if (!tb || tb[0].y > H * 0.3) return null;   // フル清掃の枠はページの上から2割ほどの所
+  // 縦線：行の高さの8割以上が黒い列（左右2画素まで広げる）
+  const isDarkCol = (x, ya, yb) => {
+    let n = 0;
+    for (let y = Math.round(ya); y <= yb; y++) { let d = 0; for (let k = -D; k <= D && !d; k++) d = dark[y * W + Math.min(W - 1, Math.max(0, x + k))]; n += d; }
+    return n >= (yb - ya + 1) * 0.8;
+  };
+  // 1行目の縦線でマスの区切りを決める
+  const tx0 = Math.min.apply(null, tb.map(l => l.x0)), tx1 = Math.max.apply(null, tb.map(l => l.x1));
+  const vx = [];
+  for (let x = Math.max(0, tx0 - 4); x <= Math.min(W - 1, tx1 + 4); x++) {
+    if (isDarkCol(x, tb[0].y + 2, tb[1].y - 2)) { if (vx.length && x - vx[vx.length - 1].b <= 1) vx[vx.length - 1].b = x; else vx.push({ a: x, b: x }); }
+  }
+  const cols = vx.map(v => Math.round((v.a + v.b) / 2));
+  if (cols.length < 4 || cols.length > 9) return null;
+  const ws = cols.slice(1).map((x, i) => x - cols[i]), mw = ws.slice().sort((a, b) => a - b)[ws.length >> 1];
+  if (ws.some(w => w < mw * 0.8 || w > mw * 1.25)) return null;   // マスの幅がそろっていない＝別の枠か線の読み落とし
+  // 下へ、同じ位置に縦線がある行だけを枠とする。「★リネン交換依頼部屋」の見出しの行には縦線が無いのでそこで切れる
+  // （見出しの行の高さがマスと同じで、横線だけだとリネン交換依頼の枠までつながって見える。11/4・11/8 の紙）
+  const rows = [tb[0].y];
+  for (let i = 0; i + 1 < tb.length; i++) {
+    const ya = tb[i].y + 2, yb = tb[i+1].y - 2;
+    if (yb - ya < mw * 0.15) break;
+    if (cols.filter(x => isDarkCol(x, ya, yb)).length < cols.length * 0.75) break;
+    rows.push(tb[i+1].y);
+  }
+  if (rows.length < 5) return null;   // 枠は5〜6行（11/4・11/5 は5行、11/8 は6行）。4行に満たなければ別の枠か線の読み落とし
+  const yellow = [];
+  for (let i = 0; i + 1 < rows.length; i++) for (let j = 0; j + 1 < cols.length; j++) {
+    const ya = rows[i], yb = rows[i+1], xa = cols[j], xb = cols[j+1];
+    const my = (yb - ya) * 0.15, mx = (xb - xa) * 0.12;
+    let n = 0, t = 0;
+    for (let y = Math.round(ya + my); y <= yb - my; y++) for (let x = Math.round(xa + mx); x <= xb - mx; x++) { t++; n += yel[y * W + x]; }
+    if (t && n / t >= 0.35) yellow.push([i, j]);
+  }
+  return { count: yellow.length, rows: rows.length - 1, cols: cols.length - 1,
+    box: [cols[0] / W, rows[0] / H, cols[cols.length - 1] / W, rows[rows.length - 1] / H], yellow: yellow,
+    ys: rows.map(Math.round), groups: groups.map(g => g.map(l => Math.round(l.y) + ':' + l.x0 + '-' + l.x1).join(' ')) };
+}
+async function countFullClean(file){
+  try { const r = findFullCells(await pageCanvas(file, 1600)); return r ? r.count : null; }
+  catch (e) { return null; }
+}
+
 
 /** ファイルをそのまま base64 にする（PDF用） */
 function readB64(file){
@@ -678,15 +801,17 @@ function shrink(file, max){
 }
 
 let USE = null;
-function read(){
+async function read(){
   $('go').disabled = true; $('go').innerHTML = '<span class="spin"></span>読み取り中…'; $('bars').innerHTML='';
+  // フル清掃の黄色いマスの数（数え終わるのを待つ。10秒たっても終わらなければ数えられなかったことにする）
+  const full = FULL_P ? await Promise.race([FULL_P, new Promise(res => setTimeout(() => res(null), 10000))]) : null;
   // 3枚は関係がないので同時に読む（待ち時間 = いちばん遅い1枚ぶん）
   const t0 = Date.now();
   const jobs = [
     CROPS
       ? { key:'ind', name:'インジケーター（切り出し2枚）', fn:'readIndicatorCrops', args:CROPS, must:true }
       : { key:'ind', name:'インジケーター', fn:'readIndicator', args:[IMG.f1, MIME.f1 || 'image/jpeg'], must:true },
-    { key:'ord', name:'清掃指示書', fn:'readOrder', args:[IMG.f2, MIME.f2 || 'image/jpeg'], must:true },
+    { key:'ord', name:'清掃指示書', fn:'readOrder', args:[IMG.f2, MIME.f2 || 'image/jpeg', full], must:true },
     IMG.f3 ? { key:'dbl', name:'ダブルメイク指示書', fn:'readDouble', args:[IMG.f3, MIME.f3 || 'image/jpeg'], must:false } : null
   ].filter(Boolean);
   const got = {}, st = {};
@@ -740,7 +865,9 @@ function show(res){
            + USE.output.toLocaleString() + 'トークン' : '');
   let bars = '<div class="bar '+(v.ok?'ok':'ng')+'"><b>'+(v.ok?'検算OK':'検算NG')+'</b>'
            + esc(v.message)+'</div>';
-  (v.warn||[]).forEach(w=>{ bars += '<div class="bar wa">'+esc(w)+'</div>'; });
+  // フル清掃の黄色いマスと読めた部屋数が合わないときだけ赤（v.fullGap）
+  (v.warn||[]).forEach(w=>{ bars += '<div class="bar '+(v.fullGap && w === v.fullGap ? 'ng' : 'wa')+'">'+esc(w)+'</div>'; });
+  FULL_PAPER = (ORDER && typeof ORDER.fullCount === 'number') ? ORDER.fullCount : null;
 
   // 指示書の日付と、保存先の日付が違えば止める
   const od = normYmd(ORDER && ORDER.date);
@@ -799,7 +926,7 @@ function loadSaved(){
         $('ocrMsg').textContent = res.date + ' の指示はまだ保存されていません。';
         return;
       }
-      ROWS = res.rooms; ORDER = null; DBL = null; LOADED_DATE = res.date; DATE_GAP = '';
+      ROWS = res.rooms; ORDER = null; DBL = null; LOADED_DATE = res.date; DATE_GAP = ''; FULL_PAPER = null;
       $('bars').innerHTML = ''; $('ordCard').hidden = true;
       $('ocrMsg').textContent = res.date + ' の保存済み ' + ROWS.length + ' 室を読み込みました。'
         + '直して保存し直せます。打刻の記録は消えません。';
@@ -910,6 +1037,13 @@ function save(){
     if (DATE_GAP && DATE_GAP !== $('date').value && DATE_GAP !== LOADED_DATE &&
         !confirm('清掃指示書は ' + DATE_GAP + ' ですが、' + $('date').value
                  + ' として保存します。本当によろしいですか？')) { msg('保存をやめました（清掃指示書の日付 ' + DATE_GAP + ' と、上の日付 ' + $('date').value + ' が違うため）。上の日付を直してからもう一度押してください。'); return; }
+    // フル清掃：紙の黄色いマスの数と、一覧でフル清掃にした部屋の数が違えば、確かめてから保存する（合っていれば聞かない）
+    const fullNow = ROWS.filter(r => r.fullClean && String(r.room).trim()).length;
+    if (FULL_PAPER != null && fullNow !== FULL_PAPER &&
+        !confirm('フル清掃の黄色いマスは ' + FULL_PAPER + '室ですが、一覧でフル清掃の部屋は ' + fullNow + '室です。\n'
+                 + '紙と見比べて、足りない部屋は「フル清掃」を押して足してください。\n確かめたうえでこのまま保存しますか？')) {
+      msg('保存をやめました（フル清掃が紙の黄色いマス ' + FULL_PAPER + '室と合わないため）。紙と見比べて、足りない部屋の「フル清掃」を押してください。'); return;
+    }
     saveNow_(msg);
   } catch (e) { msg('保存できませんでした（画面のエラー）：' + (e && e.message || e)); }
 }
