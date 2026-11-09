@@ -595,6 +595,7 @@ function unlock(){
       if (f === 'f2') {
         $(p).insertAdjacentHTML('beforeend', '<div class="fn" id="fullMsg">フル清掃のマスを数え中…</div>');
         const mine = FULL_P = countFullClean(file);
+        FULL_CROP_P = cropFullClean(file);   // フル清掃の欄だけを大きく切り出す（AI に別に読ませる）
         mine.then(n => {
           if (FULL_P !== mine || !$('fullMsg')) return;
           $('fullMsg').textContent = n == null ? '' : 'フル清掃の黄色いマス ' + n + '室';
@@ -695,7 +696,10 @@ async function cropIndicator(file){
  * いちばん上のもの＝「★フル清掃」の枠（上の数字の欄・階別の欄は右端まで続くので入らない。右のノーメイクの枠とは隙間で切れる）。
  * その下の「リネン交換依頼部屋」「アーリーチェックイン」の枠は、線のまとまりが別になるので入らない。
  * 縦線でマスに分け、中が黄色いマスを数える。枠が見つからない・形が変なときは null（数えられなかった）。 */
-let FULL_P = null;   // 数えている途中・数え終わった数（Promise。null＝数えられなかった）
+let FULL_P = null;
+/** フル清掃の欄だけを大きく切り出した画像（jpg の base64。Promise。null＝切り出せなかった）。
+ * 紙1枚まるごとだと AI が縮めて読み、黄色い大きなマスでも落とす（11/9 に左上の 414・613 を2回とも落とした）。 */
+let FULL_CROP_P = null;   // 数えている途中・数え終わった数（Promise。null＝数えられなかった）
 let FULL_PAPER = null;   // 読み取った清掃指示書の黄色いマスの数。保存の前に一覧のフル清掃の部屋数と比べる
 async function pageCanvas(file, longSide){
   const c = document.createElement('canvas');
@@ -832,6 +836,20 @@ function findFullCells(cv){
   return { count: yellow.length, rows: rows.length - 1, cols: cols.length - 1, fr: fr, gain: gain.map(g => +g.toFixed(2)),
     box: [cols[0] / W, rows[0] / H, cols[cols.length - 1] / W, rows[rows.length - 1] / H], yellow: yellow,
     ys: rows.map(Math.round), groups: groups.map(g => g.map(l => Math.round(l.y) + ':' + l.x0 + '-' + l.x1).join(' ')) };
+}
+async function cropFullClean(file){
+  try {
+    const r = findFullCells(await pageCanvas(file, 1600));
+    if (!r) return null;
+    const cv = await pageCanvas(file, 3200);
+    const W = cv.width, H = cv.height, b = r.box;
+    const x0 = Math.max(0, Math.floor((b[0] - 0.01) * W)), y0 = Math.max(0, Math.floor((b[1] - 0.03) * H));
+    const x1 = Math.min(W, Math.ceil((b[2] + 0.01) * W)), y1 = Math.min(H, Math.ceil((b[3] + 0.01) * H));
+    const c = document.createElement('canvas');
+    c.width = x1 - x0; c.height = y1 - y0;
+    c.getContext('2d').drawImage(cv, x0, y0, c.width, c.height, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.92).split(',')[1];
+  } catch (e) { return null; }
 }
 async function countFullClean(file){
   try { const r = findFullCells(await pageCanvas(file, 1600)); return r ? r.count : null; }
@@ -1185,6 +1203,7 @@ async function read(){
     if (t === DBL_TOK) break;
   }
   const full = fullP ? await fullP : null;
+  const fullCrop = FULL_CROP_P ? await Promise.race([FULL_CROP_P, new Promise(res => setTimeout(() => res(null), 10000))]) : null;
   READ_COLOR = IMG.f3 ? (color || { ok: false, why: '色を測っていない' }) : null;
   // 3枚は関係がないので同時に読む（待ち時間 = いちばん遅い1枚ぶん）
   const t0 = Date.now();
@@ -1192,7 +1211,7 @@ async function read(){
     CROPS
       ? { key:'ind', name:'インジケーター（切り出し2枚）', fn:'readIndicatorCrops', args:CROPS, must:true }
       : { key:'ind', name:'インジケーター', fn:'readIndicator', args:[IMG.f1, MIME.f1 || 'image/jpeg'], must:true },
-    { key:'ord', name:'清掃指示書', fn:'readOrder', args:[IMG.f2, MIME.f2 || 'image/jpeg', full], must:true },
+    { key:'ord', name:'清掃指示書', fn:'readOrder', args:[IMG.f2, MIME.f2 || 'image/jpeg', full, fullCrop], must:true },
     IMG.f3 ? { key:'dbl', name:'ダブルメイク指示書', fn:'readDouble', args:[IMG.f3, MIME.f3 || 'image/jpeg'], must:false } : null
   ].filter(Boolean);
   const got = {}, st = {};

@@ -411,16 +411,60 @@ function indicatorSchema_() {
  * 管理画面がフル清掃の欄の黄色く塗られたマスを数えて fullCount で渡す（数えられなかったときは null）。
  * 読めた部屋数と比べるのは verify_。
  */
-function readOrder_(base64, mimeType, fullCount) {
+function readOrder_(base64, mimeType, fullCount, fullCrop) {
   const key = apiKey_();
-  const out = callGeminiMany_(key, [
+  const jobs = [
     { base64: base64, mimeType: mimeType, prompt: orderPrompt_('down'), schema: orderSchema_() },
     { base64: base64, mimeType: mimeType, prompt: orderPrompt_('up'),   schema: orderSchema_() }
-  ]);
+  ];
+  // フル清掃の欄だけを大きく切り出した画像（管理画面が作る）も同時に読む。紙まるごとだと大きな黄色いマスでも落とす（11/9 の 414・613）
+  const crop = typeof fullCrop === 'string' && fullCrop.length > 100 ? fullCrop : null;
+  if (crop) jobs.push({ base64: crop, mimeType: 'image/jpeg', prompt: fullCropPrompt_(), schema: fullCropSchema_(), hi: true });
+  let out;
+  try { out = callGeminiMany_(key, jobs); }
+  catch (e) { if (!crop) throw e; out = callGeminiMany_(key, jobs.slice(0, 2)); }   // 切り出しの読みが失敗しても、2回の読みで進める
   const n = Number(fullCount);
-  return Object.assign(mergeOrders_(normOrder_(out[0]), normOrder_(out[1])), {
-    fullCount: (fullCount != null && fullCount !== '' && n >= 0 && n === Math.floor(n)) ? n : null,
-    usage: USAGE_ });
+  const cnt = (fullCount != null && fullCount !== '' && n >= 0 && n === Math.floor(n)) ? n : null;
+  const o = mergeOrders_(normOrder_(out[0]), normOrder_(out[1]));
+  if (out[2]) addFullCrop_(o, out[2], cnt);
+  return Object.assign(o, { fullCount: cnt, usage: USAGE_ });
+}
+
+function fullCropPrompt_() {
+  return [
+    'これはホテルの「清掃指示書」の「★フル清掃（リネン強制交換）」の欄だけを切り出した画像です。',
+    'マスが格子に並び、使っているマスは黄色く塗られていて、中に部屋番号（3〜4桁）が印刷されています。',
+    '黄色く塗られたマスの部屋番号を、左上のマスから右へ、行が終わったら次の行の左から、1つも飛ばさずに全部 rooms に入れてください。',
+    'いちばん左上のマスも必ず入れること。最後に黄色いマスの数を数え直し、rooms の数と同じか確かめてください。',
+    '白いマスに手書きで書き足された部屋番号があれば handwritten に入れてください（rooms には入れない）。',
+    '部屋番号は数字だけ。推測で足さない。'
+  ].join('\n');
+}
+function fullCropSchema_() {
+  const strArr = { type: 'ARRAY', items: { type: 'STRING' } };
+  return { type: 'OBJECT', properties: { rooms: strArr, handwritten: strArr }, required: ['rooms'] };
+}
+/**
+ * 切り出しの読みをフル清掃に足す。切り出しで読めた部屋は黄色いマスの中の番号なので、2回の読みに無くても足す。
+ * 黄色いマスの数と切り出しの数が合わないときだけ、切り出しにしか無い部屋を要確認（split）に回す。
+ */
+function addFullCrop_(o, p, cnt) {
+  const nums = a => (Array.isArray(a) ? a : []).map(x => String(x).replace(/[^0-9]/g, '')).filter(x => x.length >= 3 && x.length <= 4);
+  const rooms = nums(p && p.rooms), hw = nums(p && p.handwritten);
+  const sure = cnt != null && cnt > 0 && rooms.length === cnt;
+  o.split = o.split || [];
+  rooms.forEach(no => {
+    if (o.fullClean.indexOf(no) >= 0) return;
+    o.fullClean.push(no);
+    if (!sure) o.split.push({ field: 'フル清掃（欄の切り出しだけで読めた）', room: no });
+  });
+  hw.forEach(no => {
+    if (o.fullClean.indexOf(no) < 0) { o.fullClean.push(no); o.split.push({ field: 'フル清掃（手書き）', room: no }); }
+    if (o.handwritten.indexOf(no) < 0) o.handwritten.push(no);
+  });
+  // 切り出しの数が黄色いマスの数と合えば、2回の読みの片方だけで読めたフル清掃の部屋も確かめられたので要確認から外す
+  if (sure) o.split = o.split.filter(x => !(x.field === 'フル清掃' && rooms.indexOf(x.room) >= 0));
+  o.fullCrop = rooms;
 }
 
 /** 2回の読みを1つにする。部屋の一覧は和をとり、片方だけの部屋を split に残す */

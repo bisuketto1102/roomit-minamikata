@@ -226,7 +226,7 @@ function server() {
   await ap.exposeFunction('__gas', (n, a) => {
     try {
       const args = JSON.parse(a);
-      if (n === 'readOrder') sent.push(args.length + '引数 数=' + JSON.stringify(args[3]));
+      if (n === 'readOrder') sent.push(args.length + '引数 数=' + JSON.stringify(args[3]) + ' 切り出し=' + (typeof args[4] === 'string' && args[4].length > 100 ? 'あり' : 'なし'));
       const v = S.ctx[n](...args);
       return JSON.stringify({ v: v === undefined ? null : JSON.parse(JSON.stringify(v)) });
     } catch (e) { return JSON.stringify({ err: e.message }); }
@@ -254,7 +254,7 @@ function server() {
   ok(await pick(path.join(__dirname, 'pdf0929/order_0929.pdf')) === 'フル清掃の黄色いマス 8室', '紙を選ぶと数を出す');
   S.setDrop([['913'], ['913']]); sent.length = 0;
   await readNow();
-  ok(sent.join() === '4引数 数=8', '読み取りに数を付けて送る（暗証番号の次に 紙・種類・数）：' + sent.join());
+  ok(sent.join() === '5引数 数=8 切り出し=あり', '読み取りに数と欄の切り出しを付けて送る（暗証番号の次に 紙・種類・数・切り出し）：' + sent.join());
   let fb = await fullBars();
   ok(fb.length === 1 && /^bar ng｜フル清掃の黄色いマスは8室、読めたのは7室。紙と見比べて足りない部屋を足してください/.test(fb[0]), '赤で1行：' + fb.join(' / '));
   dialogs.length = 0; accept = false;
@@ -284,7 +284,7 @@ function server() {
   S.setDrop([['913'], ['913']]); sent.length = 0;
   ok(await pick({ name: 'a.png', mimeType: 'image/png', buffer: white }) === '', '数えられない写真は数を出さない');
   await readNow();
-  ok(sent.join() === '4引数 数=null', '数えられないときは null を送る：' + sent.join());
+  ok(sent.join() === '5引数 数=null 切り出し=なし', '数えられないときは null と切り出しなしを送る：' + sent.join());
   fb = await fullBars();
   ok(fb.length === 1 && /^bar wa｜フル清掃の数を確かめられなかった/.test(fb[0]), '1行だけ・赤にしない：' + fb.join(' / '));
   dialogs.length = 0;
