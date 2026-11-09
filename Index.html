@@ -199,6 +199,15 @@
   .b-od{background:#C0392B} .b-rd{background:#4B5A68} .b-w{background:#B86F12} .b-s{background:#A63D2A}
   .b-ec{background:#23807F} .b-sp{background:#E8823A} .b-wp{background:#2F6FBF} .b-tw{background:#5B4A9E}
   .b-odk{background:#C0392B}   /* 確認したあとも赤のまま（点滅だけ止める） */
+  /* 追加指示の印は大きく「！指示」（前の「!」は小さくて気づきにくかった） */
+  .cell .who.hasod{opacity:1}   /* 名前の段はふだん少し薄いが、「！指示」がある段は濃く出す */
+  .cell .bdg.odb{display:inline-block;font-size:11.5px;padding:0 5px;line-height:1.35;border-radius:4px;letter-spacing:.02em;
+                 margin-right:3px;vertical-align:1px;opacity:1}
+  /* まだ確かめていない追加指示：マスのまわりを赤い太枠で点滅（締切の枠は ::after、こちらは ::before） */
+  .cell.odn::before{content:'';position:absolute;inset:0;border:4px solid #C0392B;border-radius:6px;pointer-events:none;z-index:3;
+                    animation:odFrame 1s ease-in-out infinite}
+  @keyframes odFrame{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.cell.odn::before{animation:none}}
   .bdg.blink{animation:odBlink 1s ease-in-out infinite}
   @keyframes odBlink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(192,57,43,.6)}50%{opacity:.35;box-shadow:0 0 0 3px rgba(192,57,43,0)}}
   @media (prefers-reduced-motion:reduce){.bdg.blink{animation:none}}
@@ -1080,8 +1089,10 @@ function cell(r){
     : '';   // アウト前・アウト済はマスの色でわかるので文字は出さない
 
   // DD はマスがグレーで下に「DD」と出るのでバッジは付けない
-  // 追加指示：まだ誰も確かめていなければ赤く点滅、確かめたら点滅だけ止めて赤い「!」のまま
-  const bdg = (r.order ? '<span class="bdg ' + (r.orderAck ? 'b-odk' : 'b-od blink') + '">!</span>' : '')
+  // 追加指示：大きな「！指示」は名前の段に出す（2段目のほかの印を押し出さないように）。
+  // まだ誰も確かめていなければ、印とマスの赤い太枠が点滅。確かめたら点滅と枠は止めて「！指示」は赤のまま
+  const odb = r.order ? '<span class="bdg odb ' + (r.orderAck ? 'b-odk' : 'b-od blink') + '">！指示</span>' : '';
+  const bdg = ''
     + (r.round > 1 ? '<span class="bdg b-rd">'+esc(t('round', {n: r.round}))+'</span>' : '')
     + (r.twin ? '<span class="bdg b-tw">TW</span>' : '')   // ツイン（1209・1211 は常に）
     + (isW(r) ? '<span class="bdg b-w">W</span>' : '')
@@ -1094,7 +1105,8 @@ function cell(r){
     + (hasSp(r) ? '<span class="bdg b-ex">特</span>' : '')
     ;   // 特別清掃の残り（特N）はタイルに出さない。部屋を押すと詳細に「今月まだ」で出る
 
-  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':'', ddSet(r)?'ddset':'', (ckd && !r.dd) ? 'ckd' : ''].filter(Boolean).join(' ');
+  const cls = [colorOf(r), g, SEL.has(r.room)?'sel':'', ddSet(r)?'ddset':'', (ckd && !r.dd) ? 'ckd' : '',
+               (r.order && !r.orderAck) ? 'odn' : ''].filter(Boolean).join(' ');
   const mark = r.kbn === 'OUT' ? (pre ? 'D' : 'O')
     : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : r.kbn === 'STAY' ? 'S' : '−';
 
@@ -1111,7 +1123,7 @@ function cell(r){
     + 'onclick="tap(\''+esc(r.room)+'\')">'
     + '<span class="top"><span class="rno">'+esc(r.room)+'</span><span class="code">'+mark+'</span></span>'
     + '<span class="mid">'+bdg+'<span class="meta">'+esc(meta)+'</span></span>'
-    + '<span class="'+whoCls+'">'+esc(who)+'</span>'
+    + '<span class="'+whoCls+(odb ? ' hasod' : '')+'">'+odb+esc(who)+'</span>'
     + '<span class="strip"><i class="h '+r.clean.state+'"></i><i class="h '+r.check.state+'"></i></span>'
     + '</button>';
 }
