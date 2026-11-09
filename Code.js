@@ -301,11 +301,12 @@ function photoFolder_() {
   props_().setProperty('PHOTO_FOLDER_ID', f.getId());
   return f;
 }
+/** 残せたら ''、残せなかったら理由を返す（管理画面に1行出す。11/4〜11/9 に1枚も残っておらず、誰も気づけなかった） */
 function savePhoto_(base64, mimeType, kind, t0) {
   try {
-    if (!base64) return;
+    if (!base64) return '写真が空';
     // 読み取りに時間がかかった日は残さない（GASは1回6分まで。読み取りの結果のほうが大事）
-    if (t0 && Date.now() - t0 > 4.5 * 60 * 1000) return;
+    if (t0 && Date.now() - t0 > 4.5 * 60 * 1000) return '読み取りに ' + Math.round((Date.now() - t0) / 1000) + '秒かかったので残さなかった';
     const folder = photoFolder_();
     const mt = mimeType || 'image/jpeg', ext = /pdf/.test(mt) ? '.pdf' : /png/.test(mt) ? '.png' : '.jpg';
     const name = '指示書_' + today_() + '_' + kind + '_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'HHmmss') + ext;
@@ -314,8 +315,11 @@ function savePhoto_(base64, mimeType, kind, t0) {
     const c = CacheService.getScriptCache();
     const ids = JSON.parse(c.get('photoPending') || '[]'); ids.push(file.getId());
     c.put('photoPending', JSON.stringify(ids.slice(-20)), 21600);
-  } catch (err) { console.warn('写真を保存できませんでした: ' + err); }
+    return '';
+  } catch (err) { console.warn('写真を保存できませんでした: ' + err); return '保存できなかった（' + String(err && err.message || err).slice(0, 120) + '）'; }
 }
+/** 読み取りの結果に、写真を残せなかった理由を付ける（残せたら付けない） */
+function withPhoto_(r, why) { if (why && r && typeof r === 'object') r.photoNg = why; return r; }
 /** 30日より前の写真を片付ける。毎朝5時台の整理から呼ぶ（読み取りを遅くしない） */
 function cleanupPhotos_() {
   const id = props_().getProperty('PHOTO_FOLDER_ID');
@@ -3716,11 +3720,12 @@ function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReportG
 function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReportGuarded_(...a); }
 function buildManagerReport(pin, ...a) { needAdmin_(pin); return buildManagerReport_(...a); }
 function getDeclarationText(pin, ...a) { needAdmin_(pin); return getDeclarationText_(...a); }
-function readIndicator(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicator_(...a); savePhoto_(a[0], a[1], 'インジケーター', t0); return r; }
+function readIndicator(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicator_(...a); return withPhoto_(r, savePhoto_(a[0], a[1], 'インジケーター', t0)); }
 function readIndicatorCrops(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicatorCrops_(...a);
-  savePhoto_(a[0], 'image/jpeg', 'インジケーター上', t0); savePhoto_(a[1], 'image/jpeg', 'インジケーター下', t0); return r; }
-function readOrder(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readOrder_(...a); savePhoto_(a[0], a[1], '清掃指示書', t0); return r; }
-function readDouble(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readDouble_(...a); savePhoto_(a[0], a[1], 'ダブルメイク', t0); return r; }
+  const w1 = savePhoto_(a[0], 'image/jpeg', 'インジケーター上', t0), w2 = savePhoto_(a[1], 'image/jpeg', 'インジケーター下', t0);
+  return withPhoto_(r, w1 || w2); }
+function readOrder(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readOrder_(...a); return withPhoto_(r, savePhoto_(a[0], a[1], '清掃指示書', t0)); }
+function readDouble(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readDouble_(...a); return withPhoto_(r, savePhoto_(a[0], a[1], 'ダブルメイク', t0)); }
 function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
 function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
 

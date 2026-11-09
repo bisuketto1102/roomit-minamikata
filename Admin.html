@@ -1213,7 +1213,10 @@ async function read(){
   };
   jobs.forEach(j => {
     adminRun()
-      .withSuccessHandler(r => { got[j.key] = r; st[j.key] = '✓ ' + Math.round((Date.now()-t0)/1000) + '秒'; done(); })
+      .withSuccessHandler(r => { got[j.key] = r; st[j.key] = '✓ ' + Math.round((Date.now()-t0)/1000) + '秒';
+        // 朝の読み取りチェック用の写真を残せなかったら知らせる（11/4〜11/9 に黙って残っていなかった）
+        if (r && r.photoNg) $('bars').innerHTML += '<div class="bar wa">' + esc(j.name) + 'の写真をドライブに残せませんでした（朝の読み取りチェックで見比べられません）：' + esc(r.photoNg) + '</div>';
+        done(); })
       .withFailureHandler(e => {
         st[j.key] = '× 読めず';
         if (j.must) { if (!dead) { dead = true; clearInterval(tick); fail(new Error(j.name + '：' + (e.message||''))); } return; }
