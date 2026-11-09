@@ -28,6 +28,8 @@ NODE_PATH=/opt/node-tools/node_modules node run_outbox.js && NODE_PATH=/opt/node
 NODE_PATH=/opt/node-tools/node_modules node run_avg.js   # 清掃員のアベレージ
 NODE_PATH=/opt/node-tools/node_modules node run_shift.js   # シフト表 → 名簿
 NODE_PATH=/opt/node-tools/node_modules node run_report.js   # 帳票の数え方（DD・清掃不要・備考・記録の無い日）
+NODE_PATH=/opt/node-tools/node_modules node run_dbl.js <PDFのフォルダ>    # ダブルメイクの色の読み取り（9/29 はいつも見る。実物のPDFはリポジトリに入れない）
+NODE_PATH=/opt/node-tools/node_modules node run_full.js <PDFのフォルダ>   # フル清掃の黄色いマスの数え
 ```
 9/29 の正解：検算OK／OUT 110・STAY 61・FULL 8／未清掃3・実質176・除菌176・ロイヤル48・ツイン2・やり残しなし。
 
@@ -111,3 +113,10 @@ clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_
 - 日報の備考：手で書いた行として残すのは、現場メモから自動で入れた行を除いたものだけ（`MAP_DAY.autoMemo`）。現場メモを消すと備考からも消える。
 - 記録の無い日（指示がまだ・保管へ移った日）の日報は作らない（日報ログを0で上書きしない）。
 - 特別清掃シートの直接編集は、`setupTrigger` が置くスプレッドシートの編集トリガー（`onSpecialSheetEdit`）で打刻ログに入る。このスクリプトはスプレッドシートと別ファイルなので、単純トリガーの onEdit は動かない。
+
+## 読み取りの取りこぼし対策（11/9 @48）
+- 11/9 時点で GitHub の main は GAS の本番と同じ。それまで GAS だけで直していた分（10/27 以降）も入れた。GAS で直したら、ここにも入れる。
+- ダブルメイク指示書の区分は、管理画面でマスの色を測って決める（AI は2つ目の意見）。実例：11/7・11/8 に 204（黒マス 205・206 の左隣）の継続を AI が返さず、黙って落ちた。傾きは黒マスの縁から測って回して読み直し、四隅の罫線と黒マスの位置（NO_ROOM）で検算する。測れないときは使わず AI だけ（警告1行）。要確認は、新規・継続・常設・解除が変わる食い違い・AI が返さない・色が決まらない・AI「不明」だけ（青と白、赤とピンクの違いは出さない）。
+- 清掃指示書のフル清掃は、黄色く塗られたマスの数を管理画面で数え、AI が読めた部屋数（2回の和、手書きは除く）と違えば赤1行＋保存前に確認。数えられない・0のときは止めない。プロンプトは「丸で囲まれた」ではなく「黄色く塗られたマス」。実例：11/6 413、11/5 は紙5室に保存1室。
+- 読み取り中は紙を選び直せない（送る紙と測った色・数が別の紙になるのを防ぐ）。
+- 写真をドライブに残せなかったら、理由を管理画面に1行出す（11/4〜11/9 に1枚も残っておらず、朝の読み取りチェックが見比べられなかった。原因はまだ確かめていない）。
