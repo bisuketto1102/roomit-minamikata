@@ -3720,12 +3720,13 @@ function buildDailyReport(pin, ...a) { needAdmin_(pin); return buildDailyReportG
 function buildFloorReport(pin, ...a) { needAdmin_(pin); return buildFloorReportGuarded_(...a); }
 function buildManagerReport(pin, ...a) { needAdmin_(pin); return buildManagerReport_(...a); }
 function getDeclarationText(pin, ...a) { needAdmin_(pin); return getDeclarationText_(...a); }
-function readIndicator(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicator_(...a); return withPhoto_(r, savePhoto_(a[0], a[1], 'インジケーター', t0)); }
-function readIndicatorCrops(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readIndicatorCrops_(...a);
-  const w1 = savePhoto_(a[0], 'image/jpeg', 'インジケーター上', t0), w2 = savePhoto_(a[1], 'image/jpeg', 'インジケーター下', t0);
-  return withPhoto_(r, w1 || w2); }
-function readOrder(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readOrder_(...a); return withPhoto_(r, savePhoto_(a[0], a[1], '清掃指示書', t0)); }
-function readDouble(pin, ...a) { needAdmin_(pin); const t0 = Date.now(); const r = readDouble_(...a); return withPhoto_(r, savePhoto_(a[0], a[1], 'ダブルメイク', t0)); }
+// 写真は読み取りの前に残す（11/13：保存はあるのに写真が1枚も残らず、朝の読み取りチェックが見比べられなかった。前は読み取りのあとで、時間がかかった日・読み取りが落ちた日は残らなかった）
+function readIndicator(pin, ...a) { needAdmin_(pin); const w = savePhoto_(a[0], a[1], 'インジケーター'); return withPhoto_(readIndicator_(...a), w); }
+function readIndicatorCrops(pin, ...a) { needAdmin_(pin);
+  const w1 = savePhoto_(a[0], 'image/jpeg', 'インジケーター上'), w2 = savePhoto_(a[1], 'image/jpeg', 'インジケーター下');
+  return withPhoto_(readIndicatorCrops_(...a), w1 || w2); }
+function readOrder(pin, ...a) { needAdmin_(pin); const w = savePhoto_(a[0], a[1], '清掃指示書'); return withPhoto_(readOrder_(...a), w); }
+function readDouble(pin, ...a) { needAdmin_(pin); const w = savePhoto_(a[0], a[1], 'ダブルメイク'); return withPhoto_(readDouble_(...a), w); }
 function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
 function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
 
