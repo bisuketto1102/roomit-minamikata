@@ -1035,7 +1035,7 @@ function sigOf(r){
           r.dmake, r.ec?1:0, spLeft(r), r.order ? 1 : 0, r.round,
           r.dd?1:0, r.skip?1:0, r.supply, r.noMake?1:0, r.fullClean?1:0, hasSp(r)?1:0, r.orderAck, r.twin?1:0,
           r.pickup?1:0, r.bag?1:0, r.pickupBy, r.bagBy, r.collectOk,
-          gate(r), SEL.has(r.room)?1:0].join('|');
+          gate(r), SEL.has(r.room)?1:0, r.reserved?1:0].join('|');
 }
 
 function hasSp(r){ return !!(r.spAircon || r.spDrain || r.spTv); }
@@ -1109,6 +1109,8 @@ function cell(r){
                (r.order && !r.orderAck) ? 'odn' : ''].filter(Boolean).join(' ');
   const mark = r.kbn === 'OUT' ? (pre ? 'D' : 'O')
     : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : r.kbn === 'STAY' ? 'S' : '−';
+  // 紙のインジケーターと同じく、今日予約が入っている部屋（＊）は記号の前に＊
+  const star = r.reserved ? '*' : '';
 
   // 名前：チェック中はチェッカー、それ以外は清掃に入った人。退出後・チェック後も残す
   // 清掃に入っていない部屋（DDなど）で回収だけした場合は、回収した人の名前を出す
@@ -1121,7 +1123,7 @@ function cell(r){
 
   return '<button id="c-'+esc(r.room)+'" data-sig="'+esc(sigOf(r))+'" class="cell '+cls+'" '
     + 'onclick="tap(\''+esc(r.room)+'\')">'
-    + '<span class="top"><span class="rno">'+esc(r.room)+'</span><span class="code">'+mark+'</span></span>'
+    + '<span class="top"><span class="rno">'+esc(r.room)+'</span><span class="code">'+star+mark+'</span></span>'
     + '<span class="mid">'+bdg+'<span class="meta">'+esc(meta)+'</span></span>'
     + '<span class="'+whoCls+(odb ? ' hasod' : '')+'">'+odb+esc(who)+'</span>'
     + '<span class="strip"><i class="h '+r.clean.state+'"></i><i class="h '+r.check.state+'"></i></span>'
