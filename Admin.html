@@ -506,6 +506,8 @@ const DMAKE_LABEL = {
 };
 const dmakeLabel = k => DMAKE_LABEL[k] || k;
 let ROWS = [], ORDER = null, DBL = null, IMG = {}, DATE_GAP = '', FINISH_NOTE = '', LOADED_DATE = '', SP_SAVED = '';
+/** 読み取った直後の一覧（直す前）。最初に保存するときだけ送り、読み取り原本に残す。保存したら null */
+let AI0 = null;
 
 /** 「2026/9/29」「2026-09-29」などを yyyy-MM-dd にそろえる */
 function normYmd(v){
@@ -1264,6 +1266,7 @@ function show(res){
   // 読み終えたらボタンは隠す（同じ紙をもう一度読まないように）。紙を選び直すとまた出る
   $('go').hidden = true; $('go').textContent = '読み取る'; $('go').disabled = false;
   ROWS = res.rooms; ORDER = res.order; DBL = res.dbl || null;
+  AI0 = JSON.parse(JSON.stringify(res.rooms));
   const v = res.verify;
 
   $('ocrMsg').textContent = ROWS.length+' 室を読み取り（清掃対象 '+v.cleanTarget+' 室）。'
@@ -1337,7 +1340,7 @@ function loadSaved(){
         $('ocrMsg').textContent = res.date + ' の指示はまだ保存されていません。';
         return;
       }
-      ROWS = res.rooms; ORDER = null; DBL = null; LOADED_DATE = res.date; DATE_GAP = ''; FULL_PAPER = null;
+      ROWS = res.rooms; ORDER = null; DBL = null; LOADED_DATE = res.date; DATE_GAP = ''; FULL_PAPER = null; AI0 = null;
       $('bars').innerHTML = ''; $('ordCard').hidden = true;
       $('ocrMsg').textContent = res.date + ' の保存済み ' + ROWS.length + ' 室を読み込みました。'
         + '直して保存し直せます。打刻の記録は消えません。';
@@ -1484,7 +1487,9 @@ function saveNow_(msg){
   adminRun()
     .withSuccessHandler(res=>{
       btn.disabled=false; btn.textContent='この内容で保存';
-      $('saveMsg').textContent = res.date+' の指示を '+res.saved+' 室ぶん保存しました。';
+      AI0 = null;   // 2回目からは保存したあとの直しとして変更履歴に残る
+      $('saveMsg').textContent = res.date+' の指示を '+res.saved+' 室ぶん保存しました。'
+        + (res.trackNg ? '\n読み取り原本・変更履歴を残せませんでした（朝の読み取りチェックで、人が直した分が分かりません）：' + res.trackNg : '');
       // 部屋に紐づかない記録（全室注意・コネクト・作成者など）も残す
       if (ORDER) adminRun().saveDayNote(day, ORDER, DBL);   // 保存した日と同じ日に（途中で日付を変えても）
       LOADED_DATE = day;
@@ -1494,7 +1499,7 @@ function saveNow_(msg){
       btn.disabled=false; btn.textContent='この内容で保存';
       msg('保存できませんでした。'+(e.message||''));
     })
-    .saveImport(day, rows);
+    .saveImport(day, rows, AI0);
 }
 
 /* ---------- 業務中の追加指示 ---------- */

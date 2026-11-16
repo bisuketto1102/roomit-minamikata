@@ -342,21 +342,35 @@ function renamePendingPhotos_(date) {
 
 /** ?p=instr&d=日付：保存された内容（3枚の紙から入れたもの）を JSON で返す。清掃員の名前・打刻は含まない */
 function instrJson_(date) {
-  const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
-    .filter(r => String(r[1]).trim()).map(rowToRoom_).sort((a, b) => cmpRoom_(a.room, b.room));
-  const rooms = list.map(r => ({
+  return ContentService.createTextOutput(JSON.stringify(instrData_(date))).setMimeType(ContentService.MimeType.JSON);
+}
+function instrShape_(r) {
+  return {
     room: r.room, floor: r.floor, code: r.code, kbn: r.kbn, reserved: r.reserved,
     dueIn: r.dueIn, checkIn: r.checkIn, lateOut: r.lateOut,
     fullClean: r.fullClean, noMake: r.noMake, eco: r.eco, linen: r.linen, extend: r.extend,
     dmake: r.dmake, twin: r.twin, connect: r.connect, note: r.note,
     cleanStarted: r.clean.state !== 'todo'   // 入室すると D→O になる。紙と違って見えても読み違いではない
-  }));
+  };
+}
+/** 読み取り原本・変更履歴で見る項目（3枚の紙から入る項目。保存の JSON と同じ名前）。入室（cleanStarted）は入れない */
+const AI_FIELDS = [
+  ['floor', 's'], ['code', 's'], ['kbn', 's'], ['reserved', 'b'], ['dueIn', 's'], ['checkIn', 's'], ['lateOut', 's'],
+  ['fullClean', 'b'], ['noMake', 'b'], ['eco', 'b'], ['linen', 'b'], ['extend', 'b'],
+  ['dmake', 's'], ['twin', 'b'], ['connect', 's'], ['note', 's']
+];
+function instrData_(date) {
+  const list = dayBlock_(ss_().getSheetByName(SHEET.LOG), date, NCOL)
+    .filter(r => String(r[1]).trim()).map(rowToRoom_).sort((a, b) => cmpRoom_(a.room, b.room));
+  const rooms = list.map(instrShape_);
+  let track = { removed: [], aiSaved: false };
+  try { track = addTrack_(date, rooms); }
+  catch (e) { rooms.forEach(r => { r.ai = null; r.changes = []; }); }
   // 日次メモは紙の追記だけ。作成者（ホテルの人の名前）は出さない
   const n = getDayNote_(date);
   const note = n ? { orderCount: n.orderCount, connect: n.connect, allNotes: n.allNotes, dblNote: n.dblNote,
                      twins: n.twins, connects: n.connects } : null;
-  return ContentService.createTextOutput(JSON.stringify({ date: date, rooms: rooms, note: note }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return { date: date, rooms: rooms, note: note, aiSaved: track.aiSaved, removed: track.removed };
 }
 
 
@@ -473,7 +487,7 @@ function getDayNote_(dateStr) {
 }
 
 
-function saveImport_(date, rooms) {
+function saveImport_(date, rooms, aiRooms) {
   // 部屋番号の空白を落とし、同じ番号が2行・179室に無い番号は保存しない（打刻ログに同じ部屋が2行できないように）
   rooms = (rooms || []).map(r => Object.assign({}, r, { room: roomNo_(r.room) })).filter(r => r.room);
   const seen = {}, dup = [], bad = [];
@@ -484,6 +498,10 @@ function saveImport_(date, rooms) {
     const d = date || today_();
     const sh = ss_().getSheetByName(SHEET.LOG);
     const stamp = new Date();
+    // 読み取りの直後の保存（aiRooms あり）は、AI が読んだそのままの内容を読み取り原本に残す。
+    // それ以外（保存済みを読み込んで直した・保存したあとの一覧をもう一度保存した）は、変わった項目を変更履歴に足す
+    const fresh = Array.isArray(aiRooms) && aiRooms.length > 0;
+    const before = fresh ? null : dayShapes_(sh, d);
 
     // その日の行をまとめて読み、手元で直して、まとめて書き戻す（1セルずつ書くと遅いため）
     const last = sh.getLastRow();
@@ -519,12 +537,7 @@ function saveImport_(date, rooms) {
         v[29] = stamp;
         lo = Math.min(lo, i); hi = Math.max(hi, i);
       } else {
-        const line = new Array(NCOL).fill('');
-        line[0] = d; line[1] = String(r.room);
-        IMPORT_COLS.forEach((c, k) => { line[c - 1] = vals[k]; });
-        if (r.kbn === 'STAY') line[iDD] = true;
-        line[29] = stamp;
-        add.push(line);
+        add.push(newLine_(d, r, stamp));
       }
     });
 
@@ -547,8 +560,53 @@ function saveImport_(date, rooms) {
     sortLog_();
     CacheService.getScriptCache().removeAll(rooms.map(r => 'L:' + d + ':' + r.room));
     bumpRev_(d);
-    return { saved: rooms.length, added: add.length, date: d };
+    let track = '';
+    try {
+      if (fresh) saveAiRaw_(d, aiShapesOf_(d, aiRooms));
+      else logChanges_(d, before, dayShapes_(sh, d), '管理画面');
+    } catch (err) {
+      console.warn('読み取り原本・変更履歴を残せませんでした: ' + err);
+      track = String(err && err.message || err).slice(0, 120);
+    }
+    return { saved: rooms.length, added: add.length, date: d, aiSaved: fresh && !track, trackNg: track };
   });
+}
+
+/** 打刻ログに無い部屋を足すときの1行（ステイは DD を立てる） */
+function newLine_(d, r, stamp) {
+  const vals = importVals_(r);
+  const line = new Array(NCOL).fill('');
+  line[0] = d; line[1] = String(r.room);
+  IMPORT_COLS.forEach((c, k) => { line[c - 1] = vals[k]; });
+  if (r.kbn === 'STAY') line[FLAG_COL.dd - 1] = true;
+  line[29] = stamp;
+  return line;
+}
+
+/** 読み取り原本に残す形。AI が読んだ一覧を、現場の記録が何も無い部屋として保存したらこうなる、という値にする（?p=instr と同じ項目名） */
+function aiShapesOf_(d, aiRooms) {
+  const seen = {};
+  return (aiRooms || []).map(r => {
+    const room = roomNo_(r && r.room);
+    if (!room || seen[room]) return null;   // 同じ部屋が2つあれば前のほう（保存は2行あると止まる）
+    seen[room] = true;
+    return Object.assign({ room: room }, trackPick_(instrShape_(rowToRoom_(newLine_(d, Object.assign({}, r, { room: room }), '')))));
+  }).filter(Boolean);
+}
+
+/** その日の保存を { 部屋: 保存と同じ形 } で読む（変更の前後を比べるため） */
+function dayShapes_(sh, d) {
+  const out = {};
+  dayBlock_(sh, d, NCOL).filter(r => String(r[1]).trim()).forEach(v => {
+    const x = rowToRoom_(v);
+    if (!out[x.room]) out[x.room] = trackPick_(instrShape_(x));
+  });
+  return out;
+}
+/** 1部屋を書き換える前後を変更履歴に足す（失敗しても書き換えは止めない） */
+function logRoomChange_(date, room, before, v) {
+  try { logChanges_(date, { [room]: before }, { [room]: trackPick_(instrShape_(rowToRoom_(v))) }, '管理画面'); }
+  catch (err) { console.warn('変更履歴を残せませんでした: ' + err); }
 }
 
 /** IMPORT_COLS と同じ並びで値を返す */
@@ -1437,11 +1495,13 @@ function addOrder_(rooms, text, dateStr, inTime) {
       const x = readRoomRow_(sh, date, room);
       if (!x) { missing.push(room); return; }
       const prev = String(x.v[ORDER_COL - 1] || '').trim();
+      const before = tin ? trackPick_(instrShape_(rowToRoom_(x.v.slice()))) : null;
       x.v[ORDER_COL - 1] = ((prev ? prev + ' / ' : '') + t).slice(0, 300);
       x.v[ORDER_ACK_COL - 1] = '';
       if (tin) { x.v[7] = tin; x.v[6] = minusMin_(tin, EARLY_MARGIN_MIN); }
       sh.getRange(x.row, 7, 1, 2).setNumberFormat('@');
       sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
+      if (before) logRoomChange_(date, room, before, x.v);   // 早インで IN時刻・締切が変わる
       added.push(room);
     });
     if (added.length) bumpRev_(date);
@@ -1520,6 +1580,7 @@ function setRoomAdmin_(room, d, dateStr) {
     const v = x.v;
     const wasNext = String(v[8] || '') >= '19:00';
     const was = { code: String(v[3]), full: bool_(v[20]) };
+    const before = trackPick_(instrShape_(rowToRoom_(v.slice())));
 
     if ('fullClean' in d) v[20] = d.fullClean ? true : '';
     if ('noMake' in d)    v[19] = d.noMake ? true : '';
@@ -1559,7 +1620,9 @@ function setRoomAdmin_(room, d, dateStr) {
     if (patch.ec === true && !('dd' in patch)) patch.dd = false;      // EC清掃にしたら DD を外す
     applyPatch_(v, patch);
 
-    return writeRoomRow_(sh, date, x);
+    const out = writeRoomRow_(sh, date, x);
+    logRoomChange_(date, String(v[1]).trim(), before, v);
+    return out;
   });
 }
 
@@ -3730,3 +3793,195 @@ function readDouble(pin, ...a) { needAdmin_(pin); const w = savePhoto_(a[0], a[1
 function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
 function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
 
+/*************************************************
+ * 読み取り原本・変更履歴
+ *  朝の読み取りチェックで、紙と保存が違うときに「AIの読み違いを見逃した」のか「人が変えた」のかを分けるため。
+ *  ・読み取り原本：AI が読んだそのままの内容（管理画面で直す前）を、保存と同じ形・同じ項目名で部屋ごとに残す。
+ *    読み直して保存し直したら、その日の分は入れ替える。
+ *  ・変更履歴：保存したあと管理画面で部屋の中身を変えたら、項目ごとに1行足す。清掃員の名前は入れない。
+ *    清掃員画面で現場が変える項目（アウト済・DD・清掃不要など）は入れない。
+ *  どちらも TRACK_KEEP_DAYS 日で片付ける。?p=instr の部屋ごとに ai・changes として出す（instrTrack_）。
+ *  項目は AI_FIELDS（[項目名, 型]、型は s 文字 / n 数 / b あり・なし）。足すときは後ろに足す（列の見出しで読む）。
+ *************************************************/
+const AI_SHEET = '読み取り原本', CHG_SHEET = '変更履歴', TRACK_KEEP_DAYS = 40;
+const AI_HEAD_FIX = ['日付', '部屋', '保存時刻'];
+const CHG_HEAD = ['日付', '部屋', '項目', '前の値', '後の値', '時刻', 'どこで'];
+
+function trackNow_() { return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss'); }
+function trackDay_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  return String(v == null ? '' : v).trim().replace(/\//g, '-');
+}
+function trackAt_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+  return String(v == null ? '' : v).trim();
+}
+/** セルに書く形（文字で残す。あり・なしは TRUE/FALSE） */
+function trackEnc_(v) {
+  if (v === true) return 'TRUE';
+  if (v === false) return 'FALSE';
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.join(' / ');
+  return String(v);
+}
+/** セルから読む形（保存の JSON と同じ型に戻す） */
+function trackDec_(type, v) {
+  if (type === 'b') return v === true || String(v).toUpperCase() === 'TRUE';
+  const s = v instanceof Date ? Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') : String(v == null ? '' : v);
+  if (type === 'n') return s === '' || isNaN(Number(s)) ? s : Number(s);
+  return s;
+}
+function trackType_(f) {
+  const hit = AI_FIELDS.filter(x => x[0] === f)[0];
+  return hit ? hit[1] : 's';
+}
+/** 保存の形の部屋（項目名つき）から、AI_FIELDS だけを取り出す */
+function trackPick_(o) {
+  const out = {};
+  AI_FIELDS.forEach(f => { out[f[0]] = o[f[0]] === undefined ? (f[1] === 'b' ? false : '') : o[f[0]]; });
+  return out;
+}
+
+/** 見出しが今の項目と同じになるようにして返す（無ければ作る） */
+function trackSheet_(name, head) {
+  const ss = ss_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.setFrozenRows(1);
+  }
+  if (sh.getMaxColumns() < head.length) sh.insertColumnsAfter(sh.getMaxColumns(), head.length - sh.getMaxColumns());
+  const cur = sh.getRange(1, 1, 1, head.length).getValues()[0].map(String);
+  if (cur.join('\t') !== head.join('\t')) {
+    sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+  }
+  return sh;
+}
+
+/**
+ * 指定の日付の行と、TRACK_KEEP_DAYS 日より前の行を消す（下から、続いている行はまとめて）。
+ * rooms（{ 部屋: 1 }）を渡すと、その日付の行のうちその部屋だけ消す
+ */
+function trackDrop_(sh, date, rooms) {
+  const n = sh.getLastRow() - 1;
+  if (n < 1) return;
+  const limit = Utilities.formatDate(new Date(Date.now() - TRACK_KEEP_DAYS * 864e5), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const v = sh.getRange(2, 1, n, 2).getValues().map(r => ({ d: trackDay_(r[0]), room: String(r[1]).trim() }));
+  const gone = x => (date && x.d === date && (!rooms || rooms[x.room])) || (x.d && x.d < limit);
+  let i = n - 1;
+  while (i >= 0) {
+    if (!gone(v[i])) { i--; continue; }
+    let j = i;
+    while (j - 1 >= 0 && gone(v[j - 1])) j--;
+    const from = j + 2, cnt = i - j + 1;
+    // 固定した見出し以外の行を全部は消せないので、そのときは中身だけ消す
+    if (from === 2 && cnt >= sh.getMaxRows() - 1) sh.getRange(from, 1, cnt, sh.getMaxColumns()).clearContent();
+    else sh.deleteRows(from, cnt);
+    i = j - 1;
+  }
+}
+
+function trackAppend_(sh, rows) {
+  if (!rows.length) return;
+  const at = sh.getLastRow() + 1, w = rows[0].length;
+  const max = sh.getMaxRows();
+  if (at + rows.length - 1 > max) sh.insertRowsAfter(max, at + rows.length - 1 - max + 100);
+  sh.getRange(at, 1, rows.length, w).setNumberFormat('@').setValues(rows);
+}
+
+/**
+ * AI が読んだそのままの内容を、その日の分として入れ替える。
+ *  list：保存と同じ形の部屋（room と AI_FIELDS の項目）
+ *  byRoom：true なら list にある部屋だけ入れ替える（紙を何枚かに分けて読んで足す施設。読んでいない部屋の原本は残す）
+ */
+function saveAiRaw_(date, list, byRoom) {
+  const sh = trackSheet_(AI_SHEET, AI_HEAD_FIX.concat(AI_FIELDS.map(f => f[0])));
+  const at = trackNow_();
+  const rows = (list || []).filter(o => o && String(o.room || '').trim())
+    .map(o => [date, String(o.room).trim(), at].concat(AI_FIELDS.map(f => trackEnc_(o[f[0]]))));
+  let only = null;
+  if (byRoom) { only = {}; rows.forEach(r => { only[r[1]] = 1; }); }
+  trackDrop_(sh, date, only);
+  trackAppend_(sh, rows);
+  return rows.length;
+}
+
+/**
+ * 保存したあとの変更を変更履歴に足す。
+ *  before / after：{ 部屋: 保存と同じ形 }。before に無い部屋は「足した」、after に無い部屋は「外した」として1行。
+ *  before が空（はじめての保存）なら何も書かない。always のときは before が空でも書く（呼ぶ側で前の保存があると分かっているとき）
+ */
+function logChanges_(date, before, after, where, always) {
+  before = before || {}; after = after || {};
+  if (!always && !Object.keys(before).length) return 0;
+  const at = trackNow_(), w = where || '管理画面', rows = [];
+  Object.keys(after).forEach(room => {
+    const b = before[room], a = after[room];
+    if (!b) { rows.push([date, room, 'room', '', room, at, w]); return; }
+    AI_FIELDS.forEach(f => {
+      const x = trackEnc_(b[f[0]]), y = trackEnc_(a[f[0]]);
+      if (x !== y) rows.push([date, room, f[0], x, y, at, w]);
+    });
+  });
+  Object.keys(before).forEach(room => { if (!after[room]) rows.push([date, room, 'room', room, '', at, w]); });
+  if (!rows.length) return 0;
+  const sh = trackSheet_(CHG_SHEET, CHG_HEAD);
+  // 古い行の片付けは1日1回だけ
+  const today = trackDay_(new Date());
+  if (props_().getProperty('CHG_CLEAN') !== today) { props_().setProperty('CHG_CLEAN', today); trackDrop_(sh, ''); }
+  trackAppend_(sh, rows);
+  return rows.length;
+}
+
+/**
+ * ?p=instr に足す分。{ ai: { 部屋: {...} }, aiAt: { 部屋: 保存時刻 }, changes: { 部屋: [...] } }
+ *  changes は読み取り原本を残したあと（その部屋の保存時刻より後。同じ秒は前とみなす）の分だけ。原本が無い日は全部。
+ */
+function instrTrack_(date) {
+  const out = { ai: {}, aiAt: {}, changes: {} };
+  const ss = ss_();
+  const a = ss.getSheetByName(AI_SHEET);
+  if (a && a.getLastRow() >= 2) {
+    const all = a.getRange(1, 1, a.getLastRow(), a.getLastColumn()).getValues();
+    const head = all[0].map(h => String(h).trim());
+    const known = {};
+    AI_FIELDS.forEach(f => { known[f[0]] = f[1]; });
+    for (let i = 1; i < all.length; i++) {
+      if (trackDay_(all[i][0]) !== date) continue;
+      const room = String(all[i][1]).trim();
+      if (!room) continue;
+      const o = {};
+      head.forEach((h, k) => { if (k >= AI_HEAD_FIX.length && known[h]) o[h] = trackDec_(known[h], all[i][k]); });
+      out.ai[room] = o;
+      out.aiAt[room] = trackAt_(all[i][2]);
+    }
+  }
+  const c = ss.getSheetByName(CHG_SHEET);
+  if (c && c.getLastRow() >= 2) {
+    c.getRange(2, 1, c.getLastRow() - 1, CHG_HEAD.length).getValues().forEach(r => {
+      if (trackDay_(r[0]) !== date) return;
+      const room = String(r[1]).trim(), at = trackAt_(r[5]);
+      if (!room) return;
+      if (out.aiAt[room] && at <= out.aiAt[room]) return;
+      const f = String(r[2]);
+      (out.changes[room] = out.changes[room] || []).push({
+        field: f, before: trackDec_(trackType_(f), r[3]), after: trackDec_(trackType_(f), r[4]),
+        at: at, where: String(r[6] || '')
+      });
+    });
+  }
+  return out;
+}
+/** instrJson_ の部屋の一覧に ai・changes を付ける。原本の無い部屋は ai: null。保存に無い部屋の変更（外した部屋）は removed に出す */
+function addTrack_(date, rooms) {
+  const t = instrTrack_(date);
+  const seen = {};
+  rooms.forEach(r => {
+    const k = String(r.room).trim();
+    seen[k] = true;
+    r.ai = t.ai[k] || null;
+    r.changes = t.changes[k] || [];
+  });
+  const removed = Object.keys(t.changes).filter(k => !seen[k]).map(k => ({ room: k, ai: t.ai[k] || null, changes: t.changes[k] }));
+  return { rooms: rooms, removed: removed, aiSaved: Object.keys(t.ai).length > 0 };
+}
