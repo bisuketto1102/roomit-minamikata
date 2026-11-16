@@ -603,9 +603,9 @@ function dayShapes_(sh, d) {
   });
   return out;
 }
-/** 1部屋を書き換える前後を変更履歴に足す（失敗しても書き換えは止めない） */
-function logRoomChange_(date, room, before, v) {
-  try { logChanges_(date, { [room]: before }, { [room]: trackPick_(instrShape_(rowToRoom_(v))) }, '管理画面'); }
+/** 1部屋を書き換えた前後を変更履歴に足す（後の値は書いたあとシートから読み直す。失敗しても書き換えは止めない） */
+function logRoomChange_(date, room, before, sh, row) {
+  try { logChanges_(date, { [room]: before }, { [room]: trackPick_(instrShape_(rowToRoom_(sh.getRange(row, 1, 1, NCOL).getValues()[0]))) }, '管理画面'); }
   catch (err) { console.warn('変更履歴を残せませんでした: ' + err); }
 }
 
@@ -1501,7 +1501,7 @@ function addOrder_(rooms, text, dateStr, inTime) {
       if (tin) { x.v[7] = tin; x.v[6] = minusMin_(tin, EARLY_MARGIN_MIN); }
       sh.getRange(x.row, 7, 1, 2).setNumberFormat('@');
       sh.getRange(x.row, 1, 1, NCOL).setValues([x.v]);
-      if (before) logRoomChange_(date, room, before, x.v);   // 早インで IN時刻・締切が変わる
+      if (before) logRoomChange_(date, room, before, sh, x.row);   // 早インで IN時刻・締切が変わる
       added.push(room);
     });
     if (added.length) bumpRev_(date);
@@ -1621,7 +1621,7 @@ function setRoomAdmin_(room, d, dateStr) {
     applyPatch_(v, patch);
 
     const out = writeRoomRow_(sh, date, x);
-    logRoomChange_(date, String(v[1]).trim(), before, v);
+    logRoomChange_(date, String(v[1]).trim(), before, sh, x.row);
     return out;
   });
 }
