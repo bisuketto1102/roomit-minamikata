@@ -198,7 +198,8 @@
   .b-dd{background:#2F6FBF} .b-nm{background:#8C959D} .b-fl{background:#8E4A85} .b-ex{background:#2E7D4F}
   .b-od{background:#C0392B} .b-rd{background:#4B5A68} .b-w{background:#B86F12} .b-s{background:#A63D2A}
   .b-ec{background:#23807F} .b-sp{background:#E8823A} .b-wp{background:#2F6FBF} .b-tw{background:#5B4A9E}
-  .b-odk{background:#C0392B}   /* 確認したあとも赤のまま（点滅だけ止める） */
+  .b-odk{background:#C0392B}
+  .cell .bdg.b-rsv{background:#C9962B;font-size:10px;padding:0 3px;line-height:1.35}   /* 今日チェックインあり（金の★） */   /* 確認したあとも赤のまま（点滅だけ止める） */
   /* 追加指示の印は大きく「！指示」（前の「!」は小さくて気づきにくかった） */
   .cell .who.hasod{opacity:1}   /* 名前の段はふだん少し薄いが、「！指示」がある段は濃く出す */
   .cell .bdg.odb{display:inline-block;font-size:11.5px;padding:0 5px;line-height:1.35;border-radius:4px;letter-spacing:.02em;
@@ -524,6 +525,7 @@
       <span><i style="background:var(--c-O)"></i><span data-t="outDone">アウト済</span></span>
       <span><i style="background:var(--c-S)"></i><span data-t="k_STAY">ステイ</span></span>
       <span><i style="background:var(--c-S);box-shadow:inset 0 0 0 2px #9B4F8E"></i><span data-t="k_FULL">フルメイク</span></span>
+      <span><i style="background:#C9962B;color:#fff;font-style:normal;font-size:11px;font-weight:700;text-align:center;line-height:16px">★</i><span data-t="lg_rsv">今日チェックインの予約あり</span></span>
       <span><i style="background:var(--c-V)"></i><span data-t="k_V">空室</span></span>
       <span><i style="background:var(--prog)"></i><span data-t="lg_doing">作業中</span></span>
       <span><i style="background:var(--fin)"></i><span data-t="lg_done">清掃完了</span></span>
@@ -643,6 +645,7 @@
 /* Lang.html が古いままでも、新しく足した言葉が「enterAs」のような名前で出ないようにする（日本語で補う） */
 (function(){
   const add = {
+    rsv:'★ 今日チェックインの予約あり（先に仕上げる）', lg_rsv:'今日チェックインの予約あり',
     ecOn:'EC清掃にする',
     ackBtn:'内容を確認しました（{n}）', ackBy:'確認：{n}',
     ackAsk:'{r} に指示が追加になっています。\n\n{o}\n\n内容を確認しましたか？',
@@ -1032,10 +1035,10 @@ function isW(r){ return ['新規','継続','常設'].indexOf(r.dmake) >= 0; }
 
 function sigOf(r){
   return [r.kbn, r.code, r.clean.state, r.check.state, r.clean.minutes, r.dueIn, r.clean.staff, r.check.staff,
-          r.dmake, r.ec?1:0, spLeft(r), r.order ? 1 : 0, r.round,
+          r.dmake, r.ec?1:0, r.reserved?1:0, spLeft(r), r.order ? 1 : 0, r.round,
           r.dd?1:0, r.skip?1:0, r.supply, r.noMake?1:0, r.fullClean?1:0, hasSp(r)?1:0, r.orderAck, r.twin?1:0,
           r.pickup?1:0, r.bag?1:0, r.pickupBy, r.bagBy, r.collectOk,
-          gate(r), SEL.has(r.room)?1:0, r.reserved?1:0].join('|');
+          gate(r), SEL.has(r.room)?1:0].join('|');
 }
 
 function hasSp(r){ return !!(r.spAircon || r.spDrain || r.spTv); }
@@ -1092,8 +1095,8 @@ function cell(r){
   // 追加指示：大きな「！指示」は名前の段に出す（2段目のほかの印を押し出さないように）。
   // まだ誰も確かめていなければ、印とマスの赤い太枠が点滅。確かめたら点滅と枠は止めて「！指示」は赤のまま
   const odb = r.order ? '<span class="bdg odb ' + (r.orderAck ? 'b-odk' : 'b-od blink') + '">！指示</span>' : '';
-  const bdg = ''
-    + (r.reserved ? '<span class="bdg b-sp">★</span>' : '')   // 今日予約が入っている部屋（紙のインジケーターの＊）
+  // ★＝今日チェックインの予約がある部屋（インジケーターの「*D」「*O」の *）。次のお客様が入るので先に仕上げる
+  const bdg = (r.reserved ? '<span class="bdg b-rsv">★</span>' : '')
     + (r.round > 1 ? '<span class="bdg b-rd">'+esc(t('round', {n: r.round}))+'</span>' : '')
     + (r.twin ? '<span class="bdg b-tw">TW</span>' : '')   // ツイン（1209・1211 は常に）
     + (isW(r) ? '<span class="bdg b-w">W</span>' : '')
@@ -1275,6 +1278,7 @@ function fillSheet(r){
           + (m === null ? '' : esc(m < 0 ? t('dueOver', {n: Math.abs(m)}) : t('dueLeft', {n: m}))) + '</div>';
   }
   const ex = [];
+  if (r.reserved)  ex.push(t('rsv'));
   if (r.fullClean) ex.push(t('full'));
   if (r.noMake)    ex.push(t('nomake'));
   if (r.linen)     ex.push(t('linen'));

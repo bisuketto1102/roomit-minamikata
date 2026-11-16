@@ -1581,7 +1581,7 @@ $('edDd').addEventListener('change', ()=>{ if ($('edDd').checked) $('edEc').chec
 $('edCode').addEventListener('change', ()=>{
   const stay = ['S','SD'].indexOf($('edCode').value) >= 0;
   if (stay && !$('edEc').checked && !$('edFull').checked) $('edDd').checked = true;
-  if (!stay && !$('edFull').checked) $('edEc').checked = false;
+  if (!stay && !$('edFull').checked) { $('edEc').checked = false; $('edDd').checked = false; $('edSkip').checked = false; }   // アウトなどにしたら DD も外す
 });
 function edValues(){
   return {
@@ -1785,7 +1785,9 @@ function makeDaily(btn){
         + (r.mgr && r.mgr.url
             ? '　<a href="'+r.mgr.url+'" target="_blank" rel="noopener">責任者業務日報を開く</a>'
             : (r.mgr && r.mgr.error ? '<br>責任者業務日報は作れませんでした：' + esc(r.mgr.error) : ''))
-        + '<br>薄い黄色は手で書く欄です。同じ日付で作り直しても消えません。'
+        + (r.pdf ? '<br><a href="'+r.pdf+'" target="_blank" rel="noopener">客室清掃日報のPDF（A4）</a>' : (r.pdfError ? '<br>客室清掃日報のPDFは作れませんでした：' + esc(r.pdfError) : ''))
+        + (r.mgr && r.mgr.pdf ? '　<a href="'+r.mgr.pdf+'" target="_blank" rel="noopener">責任者業務日報のPDF（A4）</a>' : (r.mgr && r.mgr.pdfError ? '<br>責任者業務日報のPDFは作れませんでした：' + esc(r.mgr.pdfError) : ''))
+        + '<br>薄い黄色は手で書く欄です（清掃終了時間・清掃責任者など）。同じ日付で作り直しても消えません。'
         + (todo.length
             ? todo.map(x => '<div class="bar ng" style="margin-top:8px"><b>' + x[0] + '　'
                 + x[1].length + '室</b>' + esc(x[1].join('、')) + '</div>').join('')
