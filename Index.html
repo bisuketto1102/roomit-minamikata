@@ -1093,6 +1093,7 @@ function cell(r){
   // まだ誰も確かめていなければ、印とマスの赤い太枠が点滅。確かめたら点滅と枠は止めて「！指示」は赤のまま
   const odb = r.order ? '<span class="bdg odb ' + (r.orderAck ? 'b-odk' : 'b-od blink') + '">！指示</span>' : '';
   const bdg = ''
+    + (r.reserved ? '<span class="bdg b-sp">★</span>' : '')   // 今日予約が入っている部屋（紙のインジケーターの＊）
     + (r.round > 1 ? '<span class="bdg b-rd">'+esc(t('round', {n: r.round}))+'</span>' : '')
     + (r.twin ? '<span class="bdg b-tw">TW</span>' : '')   // ツイン（1209・1211 は常に）
     + (isW(r) ? '<span class="bdg b-w">W</span>' : '')
@@ -1109,8 +1110,6 @@ function cell(r){
                (r.order && !r.orderAck) ? 'odn' : ''].filter(Boolean).join(' ');
   const mark = r.kbn === 'OUT' ? (pre ? 'D' : 'O')
     : r.kbn === 'FULL' ? 'F' : r.kbn === 'V' ? 'V' : r.kbn === 'STAY' ? 'S' : '−';
-  // 紙のインジケーターと同じく、今日予約が入っている部屋（＊）は記号の前に＊
-  const star = r.reserved ? '*' : '';
 
   // 名前：チェック中はチェッカー、それ以外は清掃に入った人。退出後・チェック後も残す
   // 清掃に入っていない部屋（DDなど）で回収だけした場合は、回収した人の名前を出す
@@ -1123,7 +1122,7 @@ function cell(r){
 
   return '<button id="c-'+esc(r.room)+'" data-sig="'+esc(sigOf(r))+'" class="cell '+cls+'" '
     + 'onclick="tap(\''+esc(r.room)+'\')">'
-    + '<span class="top"><span class="rno">'+esc(r.room)+'</span><span class="code">'+star+mark+'</span></span>'
+    + '<span class="top"><span class="rno">'+esc(r.room)+'</span><span class="code">'+mark+'</span></span>'
     + '<span class="mid">'+bdg+'<span class="meta">'+esc(meta)+'</span></span>'
     + '<span class="'+whoCls+(odb ? ' hasod' : '')+'">'+odb+esc(who)+'</span>'
     + '<span class="strip"><i class="h '+r.clean.state+'"></i><i class="h '+r.check.state+'"></i></span>'
