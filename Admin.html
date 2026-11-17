@@ -1787,7 +1787,7 @@ function makeDaily(btn){
             : (r.mgr && r.mgr.error ? '<br>責任者業務日報は作れませんでした：' + esc(r.mgr.error) : ''))
         + (r.pdf ? '<br><a href="'+r.pdf+'" target="_blank" rel="noopener">客室清掃日報のPDF（A4）</a>' : (r.pdfError ? '<br>客室清掃日報のPDFは作れませんでした：' + esc(r.pdfError) : ''))
         + (r.mgr && r.mgr.pdf ? '　<a href="'+r.mgr.pdf+'" target="_blank" rel="noopener">責任者業務日報のPDF（A4）</a>' : (r.mgr && r.mgr.pdfError ? '<br>責任者業務日報のPDFは作れませんでした：' + esc(r.mgr.pdfError) : ''))
-        + '<br>薄い黄色は手で書く欄です（清掃終了時間・清掃責任者など）。同じ日付で作り直しても消えません。'
+        + '<br>清掃終了時間・清掃責任者・ホテル・備考の罫線は、シートに手で書けます（責任者業務日報は薄い黄色の欄）。同じ日付で作り直しても消えません。'
         + (todo.length
             ? todo.map(x => '<div class="bar ng" style="margin-top:8px"><b>' + x[0] + '　'
                 + x[1].length + '室</b>' + esc(x[1].join('、')) + '</div>').join('')

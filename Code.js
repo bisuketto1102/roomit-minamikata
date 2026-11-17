@@ -2184,10 +2184,10 @@ function buildDailyReport_(dateStr) {
   if (!sh) sh = ss.insertSheet(DAILY_SHEET);
   sh.clear();
   sh.clearFormats();
-  // 前回の作成で20列に縮めているので、A〜Z を触る前に列を戻す（無いと2回目からシートの外を指して止まる）
-  if (sh.getMaxColumns() < 26) sh.insertColumnsAfter(sh.getMaxColumns(), 26 - sh.getMaxColumns());
+  // 前回の作成で列・行を縮めているので、触る前に戻す（無いと2回目からシートの外を指して止まる）。紙の形は37列使う
+  if (sh.getMaxColumns() < 40) sh.insertColumnsAfter(sh.getMaxColumns(), 40 - sh.getMaxColumns());
   if (sh.getMaxRows() < 200) sh.insertRowsAfter(sh.getMaxRows(), 200 - sh.getMaxRows());
-  sh.getRangeList(['A1:Z200']).getRanges().forEach(x => x.breakApart());
+  sh.getRange(1, 1, 200, 40).breakApart();
 
   const INK = '#1A1A1A', HEAD = '#E8ECEF', RULE = '#555555';
   const SOLID = SpreadsheetApp.BorderStyle.SOLID;
@@ -2201,142 +2201,165 @@ function buildDailyReport_(dateStr) {
     .setBorder(null, null, null, null, true, true, '#BBBBBB', SOLID);
 
   /*
-   * A4 縦1枚の形で組む（11/12。前は横長の20列で、縦のPDFにすると左上に小さく寄り、下が空いていた）。
-   * 14列×50px。最後に行の高さを A4 縦の比率まで伸ばして、ページの下まで使う（fitPortrait_）。
+   * ホテルの紙の客室清掃日報と同じ並び・同じ見た目で組む（11/17。紙の見本の写真に合わせた）。A4 縦。
+   * 細い列（20px）を37本並べ、紙の各欄の位置に合わせて結合する。
+   * 上：表題・清掃終了時間/メイク人数・清掃指示日/清掃責任者/ホテル ／ 数字の欄（左5段・中5段・右4段）／
+   * ★清掃内訳 ／ 未清掃（備品要 1〜77・備品不要 1〜22）／ 備考の罫線 ／ 左下にレイトアウト（翌日清掃回し）。
+   * 手で書く欄（清掃終了時間・清掃責任者・ホテル・備考の罫線）は紙と同じ白。作り直しても残す。最後に行の高さを A4 縦の比率に合わせる（fitPortrait_）。
    */
-  const NC = 14;
-  sh.getRange(1, 1, 200, NC).setFontSize(11).setFontColor(INK)
-    .setVerticalAlignment('middle');
-  const INPUT = '#FFFBEA';
-  const lab = (r1, c1, nc, v) => rg(r1, c1, 1, nc).merge().setValue(v).setBackground(HEAD)
-    .setFontWeight('bold').setHorizontalAlignment('center').setWrap(false);
+  const NC = 37;
+  const BLK = '#000000', INPUT = '#FFFFFF', MED = SpreadsheetApp.BorderStyle.SOLID_MEDIUM;   // 手で書く欄も紙と同じ白
+  sh.getRange(1, 1, 200, NC).setFontSize(10).setFontColor(INK).setVerticalAlignment('middle');
+  const cellOf = (r1, c1, nr, nc) => rg(r1, c1, nr, nc).merge();
+  /** 1つの枠（外は細い黒線） */
+  const box = (r1, c1, nr, nc) => rg(r1, c1, nr, nc).setBorder(true, true, true, true, null, null, BLK, SOLID);
+  const label = (r1, c1, nr, nc, v, sz) => box(r1, c1, nr, nc) && cellOf(r1, c1, nr, nc).setValue(v)
+    .setFontSize(sz || 9).setHorizontalAlignment('center').setWrap(true);
 
-  /* ── 表題・日付・責任者・終了時間・人数 ───── */
-  rg(1, 1, 1, NC).merge().setValue('客室清掃日報　アパホテル〈新大阪 南方駅前〉')
-    .setFontSize(16).setFontWeight('bold').setHorizontalAlignment('center');
-  sh.setRowHeight(1, 38);
-  lab(2, 1, 2, '清掃指示日');
-  rg(2, 3, 1, 3).merge().setValue(date.replace(/-0?/g, '/'))   // 紙と同じ 2026/9/29
-    .setHorizontalAlignment('center').setFontSize(12).setFontWeight('bold');
-  lab(2, 6, 2, '清掃責任者');
-  rg(2, 8, 1, 3).merge().setHorizontalAlignment('center').setBackground(INPUT).setFontSize(12)
-    .setValue(manual && manual.leader ? manual.leader : '');
-  lab(2, 11, 2, 'ホテル');
-  rg(2, 13, 1, 2).merge().setHorizontalAlignment('center').setBackground(INPUT).setFontSize(12)
-    .setValue(manual && manual.hotel ? manual.hotel : '');
-  lab(3, 1, 2, '清掃終了時間');
-  // 清掃終了時間は責任者が手で入れる（11/12 ユーザー判断。前は最後の退出時刻を自動で入れていた）。作り直しても残す
+  /* ── 表題・清掃指示日・清掃責任者／ホテル ───── */
+  cellOf(1, 1, 2, 21).setValue('客室清掃日報　アパホテル〈新大阪 南方駅前〉').setFontSize(13).setVerticalAlignment('middle');
+  label(1, 22, 1, 9, '清掃指示日', 10);
+  cellOf(2, 22, 1, 9).setValue(date.replace(/-0?/g, '/')).setHorizontalAlignment('center').setFontSize(12);   // 紙と同じ 2026/11/16
+  label(3, 22, 1, 5, '清掃責任者', 8);
+  label(3, 27, 1, 4, 'ホテル', 8);
+  cellOf(4, 22, 1, 5).setValue(manual && manual.leader ? manual.leader : '').setBackground(INPUT)
+    .setHorizontalAlignment('center').setFontSize(13);
+  cellOf(4, 27, 1, 4).setValue(manual && manual.hotel ? manual.hotel : '').setBackground(INPUT)
+    .setHorizontalAlignment('center').setFontSize(13);
+  box(4, 22, 1, 5); box(4, 27, 1, 4);
+  rg(1, 22, 4, 9).setBorder(true, true, true, true, null, null, BLK, MED);
+
+  /* ── 清掃終了時間・メイク人数 ───── */
+  // 清掃終了時間は責任者が手で入れる（11/12 ユーザー判断）。作り直しても残す
   const endTime = (manual && manual.end) || '';
-  rg(3, 3, 1, 3).merge().setValue(endTime).setNumberFormat('@').setBackground(INPUT)
-    .setHorizontalAlignment('center').setFontSize(12).setFontWeight('bold');
-  lab(3, 6, 2, 'メイク人数');
-  rg(3, 8, 1, 3).merge().setValue(Object.keys(who).length + ' 人')
-    .setHorizontalAlignment('center').setFontSize(12).setFontWeight('bold');
-  rg(3, 11, 1, 4).merge();                           // 右の空いた所は1つにまとめる
-  frame(2, 1, 3, NC);
-  sh.setRowHeights(2, 2, 30);
-  sh.setRowHeight(4, 10);
+  label(3, 4, 1, 7, '清掃終了時間', 8);
+  label(4, 4, 1, 7, 'メイク人数', 8);
+  cellOf(3, 11, 1, 7).setValue(endTime).setNumberFormat('@').setBackground(INPUT).setHorizontalAlignment('center').setFontSize(13);
+  cellOf(4, 11, 1, 7).setValue(Object.keys(who).length + ' 人').setHorizontalAlignment('center').setFontSize(13);
+  box(3, 11, 1, 7); box(4, 11, 1, 7);
+  rg(3, 4, 2, 14).setBorder(true, true, true, true, null, null, BLK, MED);
+  sh.setRowHeights(1, 2, 28); sh.setRowHeight(3, 26); sh.setRowHeight(4, 34);
+  sh.setRowHeight(5, 10);
 
-  /* ── 数字の欄（左右2列。左は清掃、右は備品・Ｄメイク）───── */
-  const left = [
-    ['清掃指示数', n.order, '室'], ['アウト清掃数', n.out, '室'], ['アパエコ清掃数', n.eco, '室'],
-    ['強制交換', n.full, '室'], ['交換依頼', n.linen, '室'], ['未清掃数', n.undone, '室'], ['除菌数', n.real, '室']
+  /* ── 数字の欄（紙と同じ並び：左5段・中5段・右4段）───── */
+  const nums = [
+    [3,  [['清掃指示数', n.order, '室'], ['アパエコ清掃数', n.eco, '室'], ['強制交換', n.full, '室'],
+          ['交換依頼', n.linen, '室'], ['使用済みバッグ\n回収数', n.bag, '室']]],
+    [15, [['未清掃数', n.undone, '室'], ['アウト清掃数', n.out, '室'], ['除菌数', n.real, '室'],
+          ['水設置', n.water, '本'], ['ゴミ箱\n回収数', n.trash, '室']]],
+    [27, [['Ｄメイク(増設含む)', royal.length, '室'], ['新規増設Ｄメイク', nNew, '室'],
+          ['増設Ｄメイク解除', nOff, '室'], ['ツイン数', twin.length, '室']]]
   ];
-  const right = [
-    ['水設置', n.water, '本'], ['使用済みバッグ回収数', n.bag, '室'], ['ゴミ箱回収数', n.trash, '室'],
-    ['Ｄメイク(増設含む)', royal.length, '室'], ['新規増設Ｄメイク', nNew, '室'], ['増設Ｄメイク解除', nOff, '室'], ['ツイン数', twin.length, '室']
-  ];
-  const top = 5;
-  [[left, 1], [right, 8]].forEach(([items, c]) => items.forEach((x, i) => {
-    const y = top + i;
-    rg(y, c, 1, 4).merge().setValue(x[0]).setBackground(HEAD).setFontWeight('bold')
-      .setHorizontalAlignment('left').setWrap(false);
-    rg(y, c + 4, 1, 2).merge().setValue(x[1]).setHorizontalAlignment('right').setFontSize(15).setFontWeight('bold');
-    rg(y, c + 6).setValue(x[2]).setHorizontalAlignment('center').setFontSize(9).setFontColor('#777777');
-  }));
-  frame(top, 1, top + left.length - 1, 7);
-  frame(top, 8, top + right.length - 1, NC);
-  sh.setRowHeights(top, left.length, 28);
+  const top = 6;
+  nums.forEach(([c, items]) => {
+    const vw = c === 27 ? 5 : 6;                   // 右の枠は37列目で終わるので、数字の幅を1つ狭く
+    items.forEach((x, i) => {
+      const y = top + i;
+      label(y, c, 1, 5, x[0], 8);
+      cellOf(y, c + 5, 1, vw).setValue(x[1]).setHorizontalAlignment('right').setFontSize(15);
+      rg(y, c + 5 + vw).setValue(x[2]).setHorizontalAlignment('left').setFontSize(10);
+      box(y, c + 5, 1, vw + 1);                    // 数字と「室」は1つの枠（紙と同じ）
+    });
+    rg(top, c, items.length, 6 + vw).setBorder(true, true, true, true, null, null, BLK, MED);
+  });
+  sh.setRowHeights(top, 5, 30);
 
-  /* ── 清掃内訳（階は11階ぶん。見出し2列＋階＋合計＝14列）───── */
-  let r = top + left.length + 1;
-  rg(r, 1, 1, 6).merge().setValue('★ 清掃内訳').setFontSize(12).setFontWeight('bold');
-  sh.setRowHeight(r, 26);
+  /* ── ★清掃内訳 ───── */
+  let r = top + 5 + 1;
+  sh.setRowHeight(r - 1, 10);
+  cellOf(r, 1, 1, 8).setValue('★清掃内訳').setFontSize(8);
+  sh.setRowHeight(r, 18);
   r++;
-  const fl = floors.slice(0, NC - 3);                // 列に収まらないほど階が増えたら後ろを切る（南方は11階）
-  const w = fl.length + 3;
-  const table = [
-    ['', '', ...fl, '合計'],
-    ['ホテル指示数', '',   ...fl.map(f => byFloor[f].order),      n.order],
-    ['実質客室清掃数', '', ...fl.map(f => byFloor[f].real),       n.real],
-    ['ダブル設置数', '',   ...fl.map(f => byFloor[f].dbl || ''),  royal.length],
-    ['ツイン数', '',       ...fl.map(f => byFloor[f].twin || ''), twin.length]
+  const fl = floors.slice(0, 11);                  // 列に収まるのは11階（南方は 2F〜12F）
+  const tRows = [
+    ['', fl.map(f => f), '合計'],
+    ['ホテル指示数',   fl.map(f => byFloor[f].order),       n.order],
+    ['実質客室清掃数', fl.map(f => byFloor[f].real),        n.real],
+    ['ダブル設置数',   fl.map(f => byFloor[f].dbl || ''),   royal.length],
+    ['ツイン数',       fl.map(f => byFloor[f].twin || ''),  twin.length]
   ];
-  sh.getRange(r, 1, 5, w).setValues(table);
-  for (let i = 0; i < 5; i++) rg(r + i, 1, 1, 2).merge();
-  rg(r, 1, 1, w).setBackground(HEAD).setFontWeight('bold').setHorizontalAlignment('center');
-  rg(r, 1, 5, 2).setBackground(HEAD).setFontWeight('bold').setHorizontalAlignment('center').setFontSize(9);
-  rg(r + 1, 3, 4, w - 2).setHorizontalAlignment('center').setFontSize(12);
-  rg(r, w, 5, 1).setBackground('#FFF9E0').setFontWeight('bold');
-  frame(r, 1, r + 4, w);
-  sh.setRowHeights(r, 5, 26);
-  r += 6;
+  const tTop = r;
+  tRows.forEach((x, i) => {
+    const y = tTop + i;
+    cellOf(y, 2, 1, 7).setValue(x[0]).setHorizontalAlignment('center').setFontSize(8);
+    x[1].forEach((v, k) => cellOf(y, 9 + k * 2, 1, 2).setValue(v).setHorizontalAlignment('center').setFontSize(i ? 12 : 11));
+    cellOf(y, 9 + fl.length * 2, 1, 4).setValue(x[2]).setHorizontalAlignment('center').setFontSize(i ? 12 : 11);
+  });
+  const tEnd = 9 + fl.length * 2 + 3;
+  rg(tTop, 2, 5, tEnd - 1).setBorder(true, true, true, true, null, null, BLK, MED);
+  rg(tTop, 2, 5, 7).setBorder(true, true, true, true, null, true, BLK, SOLID);
+  for (let k = 0; k <= fl.length; k++) rg(tTop, 9 + k * 2, 5, k < fl.length ? 2 : 4).setBorder(true, true, true, true, null, true, BLK, SOLID);
+  rg(tTop + 1, 9 + fl.length * 2).setBackground('#F7DE8A');   // ホテル指示数の合計だけ黄色（紙と同じ）
+  sh.setRowHeight(tTop, 26); sh.setRowHeights(tTop + 1, 4, 30);
+  r = tTop + 5;
+  sh.setRowHeight(r, 16);
+  r++;
 
-  /* ── 未清掃（備品要・備品不要）：1行に7室 ──────────────── */
-  const PER = 7;
-  const mk = (arr, rows) => {
-    const out = [];
-    for (let i = 0; i < rows; i++) {
-      const line = [];
-      for (let c = 0; c < PER; c++) { const k = i * PER + c; line.push(k < arr.length ? k + 1 : '', arr[k] || ''); }
-      out.push(line);
+  /* ── 未清掃内容報告（備品要：1行7室・77番まで ／ 備品不要：1行2室・22番まで）──── */
+  const uRows = Math.max(11, Math.ceil(need.length / 7), Math.ceil(noNeed.length / 2));
+  const grid = (c0, per, arr, title) => {
+    label(r, c0, 1, per * 4, title, 8);
+    for (let i = 0; i < uRows; i++) for (let k = 0; k < per; k++) {
+      const idx = i * per + k, y = r + 1 + i, c = c0 + k * 4;
+      rg(y, c).setValue(idx + 1).setFontSize(7).setHorizontalAlignment('left').setVerticalAlignment('top');
+      cellOf(y, c + 1, 1, 3).setValue(arr[idx] || '').setHorizontalAlignment('center').setFontSize(13);
+      rg(y, c, 1, 4).setBorder(true, true, true, true, null, null, BLK, SOLID);
     }
-    return out;
+    rg(r, c0, uRows + 1, per * 4).setBorder(true, true, true, true, null, null, BLK, MED);
   };
-  const roomBlock = (title, arr, minRows) => {
-    lab(r, 1, NC, title + '　' + arr.length + ' 室');
-    sh.setRowHeight(r, 24);
-    r++;
-    const rows = Math.max(Math.ceil(arr.length / PER), minRows);
-    sh.getRange(r, 1, rows, NC).setValues(mk(arr, rows)).setHorizontalAlignment('center').setFontSize(12);
-    for (let c = 1; c <= NC; c += 2) rg(r, c, rows, 1).setBackground('#F4F6F7').setFontColor('#A0A0A0').setFontSize(8);
-    frame(r - 1, 1, r + rows - 1, NC);
-    sh.setRowHeights(r, rows, 22);
-    r += rows + 1;
-  };
-  roomBlock('未清掃内容報告（備品要）', need, 3);
-  roomBlock('未清掃（備品不要）', noNeed, 1);
+  grid(1, 7, need, '未清掃内容報告（備品要）');
+  grid(30, 2, noNeed, '未清掃内容報告（備品不要）');
+  sh.setRowHeight(r, 22); sh.setRowHeights(r + 1, uRows, 24);
+  r += uRows + 1;
+  sh.setRowHeight(r, 18);
+  r++;
 
-  /* ── 備考 ───────────────────────── */
+  /* ── 備考（罫線だけ）と、左下にレイトアウト（翌日清掃回し）──── */
   // チェッカー報告から作る行（自動）と、手で書き足した行。清掃員の現場メモは日報に載せない（フロアレポートの備考だけ）
   // 手の行には前回の自動の行を入れない（入れると、報告を消したり直したりしても古い行が日報に残り続ける）
   const autoMemo = list.filter(x => x.report)
       .sort((a, b) => cmpRoom_(a.room, b.room))
       .map(x => x.room + '　' + x.report);
   const memos = uniq_(((manual && manual.memo) || []).concat(autoMemo));
-  const memoRows = Math.max(memos.length + 1, 4);
-  lab(r, 1, NC, '備考（チェッカー報告・手書き）');
-  sh.setRowHeight(r, 24);
-  r++;
-  const memoTop = r;
-  for (let i = 0; i < memoRows; i++) {
-    rg(r + i, 1, 1, NC).merge().setValue(memos[i] || '')
-      .setHorizontalAlignment('left').setBackground(INPUT);
-  }
-  frame(r - 1, 1, r + memoRows - 1, NC);
-  sh.setRowHeights(r, memoRows, 22);
-  r += memoRows + 1;
-
-  /* ── レイトアウト（翌日回し）────────── */
   // 翌日回しは19時以降のレイトアウトだけ。12時のレイトアウトは当日中に清掃する
   const lateRooms = list.filter(x => isNextDay_(x)).map(x => x.room).sort(cmpRoom_);
-  roomBlock('レイトアウト（翌日回し）', lateRooms, 1);
-  const lastRow = r - 2;
+  const lRows = Math.max(2, Math.ceil(lateRooms.length / 2));
+  const sideLines = lRows + 1;                       // レイトアウトの枠の右の罫線（見出しの行から）
+  const fullLines = Math.max(4, memos.length + 1 - sideLines);
+  const memoCells = [];
+  for (let i = 0; i < fullLines; i++) {
+    cellOf(r + i, 1, 1, NC).setHorizontalAlignment('left').setFontSize(12).setBackground(INPUT)
+      .setBorder(null, null, true, null, null, null, BLK, SOLID);
+    memoCells.push([r + i, 1]);
+  }
+  sh.setRowHeights(r, fullLines, 28);
+  r += fullLines;
+  sh.setRowHeight(r, 14);
+  r++;
+  const lTop = r;
+  label(lTop, 1, 1, 12, 'レイトアウト(翌日清掃回し)', 8);
+  for (let i = 0; i < lRows; i++) {
+    const y = lTop + 1 + i;
+    [[1, lateRooms[i * 2]], [7, lateRooms[i * 2 + 1]]].forEach(([c, no]) => {
+      rg(y, c).setValue('R').setFontSize(9).setHorizontalAlignment('center');
+      cellOf(y, c + 1, 1, 5).setValue(no || '').setHorizontalAlignment('center').setFontSize(13);
+      rg(y, c, 1, 6).setBorder(true, true, true, true, null, null, BLK, SOLID);
+    });
+  }
+  rg(lTop, 1, lRows + 1, 12).setBorder(true, true, true, true, null, null, BLK, MED);
+  for (let i = 0; i < sideLines; i++) {
+    cellOf(lTop + i, 14, 1, NC - 13).setHorizontalAlignment('left').setFontSize(12).setBackground(INPUT)
+      .setBorder(null, null, true, null, null, null, BLK, SOLID);
+    memoCells.push([lTop + i, 14]);
+  }
+  sh.setRowHeight(lTop, 24); sh.setRowHeights(lTop + 1, lRows, 28);
+  memoCells.forEach(([y, c], i) => { if (memos[i]) rg(y, c).setValue(memos[i]); });
+  const lastRow = lTop + lRows;
 
   // 「指示書の記録（参考）」の欄は出さない（11/12 ユーザー判断。紙の日報に無い欄）
 
   /* ── 体裁 ─────────────────── */
-  for (let c = 1; c <= NC; c++) sh.setColumnWidth(c, 46);   // 横幅を詰めるほど、A4 に収めたときの文字が大きくなる
+  for (let c = 1; c <= NC; c++) sh.setColumnWidth(c, 20);
   sh.setHiddenGridlines(true);
   sh.setFrozenRows(0);
   if (sh.getMaxColumns() > NC) sh.deleteColumns(NC + 1, sh.getMaxColumns() - NC);
@@ -2357,9 +2380,10 @@ function buildDailyReport_(dateStr) {
 
   // 途中で切らない。長すぎるときは自動の行を後ろから減らす（減らした行は、次の作り直しで手の行として残るだけ）
   const am = autoMemo.slice();
-  const cells = { leader: [2, 8], hotel: [2, 13], end: [3, 3] };   // 手で書く欄の位置（縦の形）
-  let mj = JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows, cells: cells, autoMemo: am });
-  while (Utilities.newBlob(mj).getBytes().length > 8500 && am.length) { am.pop(); mj = JSON.stringify({ date: date, memoTop: memoTop, memoRows: memoRows, cells: cells, autoMemo: am }); }
+  const cells = { leader: [4, 22], hotel: [4, 27], end: [3, 11] };   // 手で書く欄の位置（紙と同じ形・11/17）
+  const mapOf = () => JSON.stringify({ date: date, memoCells: memoCells, cells: cells, autoMemo: am });
+  let mj = mapOf();
+  while (Utilities.newBlob(mj).getBytes().length > 8500 && am.length) { am.pop(); mj = mapOf(); }
   props_().setProperty('MAP_DAY', mj);
 
   /*
@@ -2381,7 +2405,7 @@ function buildDailyReport_(dateStr) {
   let mgr = null;
   try { mgr = buildManagerReport_(date); } catch (e) { mgr = { error: e.message }; }
 
-  // A4 1枚に収めた PDF も作る（客室清掃日報は横）。失敗してもシートはできているので止めない
+  // A4 縦1枚に収めた PDF も作る（客室清掃日報・責任者業務日報とも）。失敗してもシートはできているので止めない
   let pdf = '', pdfError = '';
   try { pdf = exportSheetPdf_(sh, '客室清掃日報_' + date + '.pdf', DAILY_PDF_PORTRAIT); } catch (e) { pdfError = e.message; }
   if (mgr && mgr.url) {
@@ -2459,9 +2483,10 @@ function captureManual_(kind, sh) {
       leader: g.apply(null, (map.cells && map.cells.leader) || [2, 15]),
       end:    g.apply(null, (map.cells && map.cells.end) || [3, 3]),
       hotel:  g.apply(null, (map.cells && map.cells.hotel) || [2, 18]),
-      memo:   map.memoTop ? sh.getRange(map.memoTop, 1, map.memoRows, 1).getDisplayValues()
-                              .map(x => String(x[0] || '').trim()).filter(Boolean)
-                              .filter(x => (map.autoMemo || []).indexOf(x) < 0) : []
+      // 備考：紙の形（11/17〜）は罫線の行ごとの位置（memoCells）、それより前の形は memoTop から下の1列目
+      memo:   (map.memoCells ? map.memoCells.map(([r, c]) => g(r, c))
+               : map.memoTop ? sh.getRange(map.memoTop, 1, map.memoRows, 1).getDisplayValues().map(x => String(x[0] || '').trim()) : [])
+              .filter(Boolean).filter(x => (map.autoMemo || []).indexOf(x) < 0)
     };
   }
   saveManual_(kind, map.date, data);
@@ -2913,7 +2938,7 @@ function exportFloorPdf_(date, floors) {
 
 /**
  * 日報の PDF の向き。紙に合わせて変えるときはここだけ直す（true＝縦、false＝横）。
- * どちらも A4 縦（11/12 ユーザー指定）。客室清掃日報は20列あるので、縦に収まるよう縮めて1枚にする。
+ * どちらも A4 縦（11/12 ユーザー指定）。客室清掃日報はホテルの紙と同じ A4 縦の形で組んである。
  */
 const DAILY_PDF_PORTRAIT   = true;
 const MANAGER_PDF_PORTRAIT = true;
@@ -3826,6 +3851,7 @@ function readOrder(pin, ...a) { needAdmin_(pin); const w = savePhoto_(a[0], a[1]
 function readDouble(pin, ...a) { needAdmin_(pin); const w = savePhoto_(a[0], a[1], 'ダブルメイク'); return withPhoto_(readDouble_(...a), w); }
 function mergeSheets(pin, ...a) { needAdmin_(pin); return mergeSheets_(...a); }
 function resortLog(pin, ...a) { needAdmin_(pin); return resortLog_(...a); }
+
 
 /*************************************************
  * 読み取り原本・変更履歴
