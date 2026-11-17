@@ -143,3 +143,5 @@ clasp deploy -i AKfycbxvbj5iniJPsZxyG5W6aUfxPwSFe3ohYtYrfzv8GMsszdxUCkavv0AvFpJ_
 ## GAS で直接書かれた直し（川本さんの分）は消さない（11/17 ユーザーの決め）
 - 川本さん（上司）が GAS のエディタで直接直すことがある。これは GitHub に入っていないので、そのまま `clasp push` すると消える（南方の @50〜@52：予約の★・アウトにしたら DD を外す・日報を A4 縦1枚・清掃終了時間は手で書く が、11/14 の @53 で消えていた。11/16 に戻した）。
 - 反映の前に必ず：今の GAS を別のフォルダに `clasp pull` し、`clasp list-versions` も見て、GitHub と見比べる。GitHub に無い直しがあれば、先に GitHub に入れてから反映する。中身は川本さんの書いたとおりにして、勝手に変えない。
+
+- 11/17 業務中に @54 で反映（読み取り原本・変更履歴。ユーザーの OK）。反映の前に今の GAS を見比べ、川本さんの直しは残した。
